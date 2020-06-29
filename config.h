@@ -328,6 +328,11 @@
 #define MAP_SIZE_POW2       16
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
+/* shared memory to store score of each block */
+#define BB_SCORE_SIZE      MAP_SIZE
+/* shared memory to store values of operands, 64 bits for each */
+#define OP_VALUE_SIZE      (8 * MAP_SIZE)
+
 /* Maximum allocator request size (keep well under INT_MAX): */
 
 #define MAX_ALLOC           0x40000000

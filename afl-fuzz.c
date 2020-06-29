@@ -87,6 +87,12 @@
 #  define EXP_ST static
 #endif /* ^AFL_LIB */
 
+/********************    New Variables    *********************/
+EXP_ST u8* score_ptr;                 /* SHM with score of each block, BB_SCORE_SIZE */
+EXP_ST u64* xor_value_ptr;             /* SHM with value of XOR of each operand */
+
+/********************    AFL Variables    *********************/
+
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
 
@@ -1360,7 +1366,7 @@ EXP_ST void setup_shm(void) {
   memset(virgin_tmout, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
-  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+  shm_id = shmget(IPC_PRIVATE, MAP_SIZE + BB_SCORE_SIZE + OP_VALUE_SIZE, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");
 
@@ -1378,8 +1384,14 @@ EXP_ST void setup_shm(void) {
   ck_free(shm_str);
 
   trace_bits = shmat(shm_id, NULL, 0);
+
+  // score pointer
+  score_ptr = trace_bits + MAP_SIZE;
+  // result of XOR pointer
+  xor_value_ptr = (u64*) (trace_bits + MAP_SIZE + BB_SCORE_SIZE);
   
   if (trace_bits == (void *)-1) PFATAL("shmat() failed");
+
 
 }
 
