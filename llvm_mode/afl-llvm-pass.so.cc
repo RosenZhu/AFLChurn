@@ -60,10 +60,7 @@
 
 using namespace llvm;
 
-cl::opt<std::string> TargetsFile(
-    "targets",
-    cl::desc("Input file containing the target lines of code."),
-    cl::value_desc("targets"));
+
 
 namespace {
 
@@ -93,8 +90,7 @@ namespace {
       // StringRef getPassName() const override {
       //  return "American Fuzzy Lop Instrumentation";
       // }
-      void getCmpOpValue(Instruction& Inst, unsigned int cur_id);
-      void getSwValue(Instruction& Inst, unsigned int cur_id);
+
       void setValueNonSan(Value *v);
       void setInsNonSan(Instruction *ins);
 
@@ -115,111 +111,9 @@ void AFLCoverage::setInsNonSan(Instruction *ins) {
     ins->setMetadata(NoSanMetaId, NoneMetaNode);
 }
 
-// get value of the operand in cmp instruction
-void AFLCoverage::getCmpOpValue(Instruction& Instr, unsigned int cur_id){
-    Instruction *InsertPoint = Instr.getNextNode();
-    if (!InsertPoint || isa<ConstantInt>(Instr)) return;
-   
-    CmpInst *Cmp = dyn_cast<CmpInst>(&Instr);
-    Value *OpArg[2];
-    OpArg[0] = Cmp->getOperand(0);
-    OpArg[1] = Cmp->getOperand(1);
-
-
-    Type *OpType = OpArg[0]->getType();
-    Value *Shv0, *Shv1;
-
-    IRBuilder<> IRCMP(InsertPoint);
-
-    if (OpType->isFloatTy()){
-        Shv0 = IRCMP.CreateBitCast(OpArg[0], Int32Ty);
-        setValueNonSan(Shv0);
-        Shv0 = IRCMP.CreateZExt(Shv0, Int64Ty);
-        Shv1 = IRCMP.CreateBitCast(OpArg[1], Int32Ty);
-        setValueNonSan(Shv1);
-        Shv1 = IRCMP.CreateZExt(Shv1, Int64Ty);
-    }else if (OpType->isDoubleTy()){
-        Shv0 = IRCMP.CreateBitCast(OpArg[0], Int64Ty);
-        setValueNonSan(Shv0);
-        Shv1 = IRCMP.CreateBitCast(OpArg[1], Int64Ty);
-        setValueNonSan(Shv1);
-    }else if (OpType->isPointerTy()) {
-        Shv0 = IRCMP.CreatePtrToInt(OpArg[0], Int64Ty);
-        Shv1 = IRCMP.CreatePtrToInt(OpArg[1], Int64Ty);
-    } else if (OpType->isIntegerTy() && OpType->getIntegerBitWidth() < 64) {
-        Shv0 = IRCMP.CreateZExt(OpArg[0], Int64Ty); //zero extension instruction 
-        Shv1 = IRCMP.CreateZExt(OpArg[1], Int64Ty); //zero extension instruction 
-    }else if (OpType->isIntegerTy() && OpType->getIntegerBitWidth() == 64){
-        Shv0 = OpArg[0];
-        Shv1 = OpArg[1];
-    }else{ //TODO: OpType->isVectorTy()?
-        return;
-    }
-    
-    LoadInst *MapBasePtr = IRCMP.CreateLoad(AFLMapPtr); //load base SHM pointer
-    MapBasePtr->setMetadata(NoSanMetaId, NoneMetaNode);
-
-    Constant *ValID = ConstantInt::get(Int32Ty, MAP_SIZE + BB_SCORE_SIZE + cur_id * 8);
-    Value *MapPtrValIndex = IRCMP.CreateGEP(MapBasePtr, ValID); //index
-
-    /* Use XOR as the hash function of operands; 
-        Check if one of the operands in a block changes when one byte in a seed is mutated: 
-          if result of XOR changes, one or more of the operands change.
-      TODO: change hash function? -rosen */
-
-    Value *OPRes = IRCMP.CreateXor(Shv0, Shv1);
-    LoadInst *MapOpVal = IRCMP.CreateLoad(Int64Ty, MapPtrValIndex);
-    Value *memRes = IRCMP.CreateXor(OPRes, MapOpVal);
-
-    IRCMP.CreateStore(memRes, MapPtrValIndex)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);
-
-}
-
-// get value of switch
-void AFLCoverage::getSwValue(Instruction& Instr, unsigned int cur_id){
-    SwitchInst *Sw = dyn_cast<SwitchInst>(&Instr);
-    Value *Cond = Sw->getCondition();
-
-    if (!(Cond && Cond->getType()->isIntegerTy() && !isa<ConstantInt>(Cond))) {
-        return;
-    }
-
-    IRBuilder<> IRSW(Sw);
-    Value *CondExt = IRSW.CreateZExt(Cond, Int64Ty);
-  
-    LoadInst *MapBasePtr = IRSW.CreateLoad(AFLMapPtr); //load base SHM pointer
-    MapBasePtr->setMetadata(NoSanMetaId, NoneMetaNode);
-
-    Constant *ValID = ConstantInt::get(Int32Ty, MAP_SIZE + BB_SCORE_SIZE + cur_id * 8);
-    Value *MapPtrValIndex = IRSW.CreateGEP(MapBasePtr, ValID); //index
-
-    /* Use XOR as the hash function of operands; 
-        Check if one of the operands in a block changes when one byte in a seed is mutated: 
-          if result of XOR changes, one or more of the operands change.
-      TODO: change hash function? -rosen */
-
-    LoadInst *MapOpVal = IRSW.CreateLoad(Int64Ty, MapPtrValIndex);
-    Value *memRes = IRSW.CreateXor(CondExt, MapOpVal);
-
-    IRSW.CreateStore(memRes, MapPtrValIndex)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);
-
-}
-
 
 bool AFLCoverage::runOnModule(Module &M) {
 
-  /* get change-burst targets */
-  std::list<std::string> targets;
-
-  if (!TargetsFile.empty()) {
-    std::ifstream targetsfile(TargetsFile);
-    std::string line;
-    while (std::getline(targetsfile, line))
-      targets.push_back(line);
-    targetsfile.close();
-  }
 
   LLVMContext &C = M.getContext();
 
@@ -271,14 +165,10 @@ bool AFLCoverage::runOnModule(Module &M) {
   /* Instrument all the things! */
 
   int inst_blocks = 0;
-  int bb_score;
 
   for (auto &F : M){
 
     for (auto &BB : F) {
-      std::string filename;
-      unsigned line;
-      bb_score = 0; //score, according to change burst
 
       BasicBlock::iterator IP = BB.getFirstInsertionPt();
       IRBuilder<> IRB(&(*IP));
@@ -291,50 +181,6 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      for (auto &I: BB){
-
-        /* Connect targets with instructions */
-        DILocation *Loc = I.getDebugLoc().get(); 
-        if (Loc){
-          filename = Loc->getFilename().str();
-          line = Loc->getLine();
-          if (filename.empty()){
-            DILocation *oDILoc = Loc->getInlinedAt();
-            if (oDILoc){
-              line = oDILoc->getLine();
-              filename = oDILoc->getFilename().str();
-            }
-          }
-        }
-        /* score for each block */
-        for (std::list<std::string>::iterator it = targets.begin(); it != targets.end(); ++it) {
-
-          std::string target = *it;
-          std::size_t found = target.find_last_of("/\\");
-          if (found != std::string::npos)
-            target = target.substr(found + 1);
-
-          std::size_t pos = target.find_last_of(":");
-          std::string target_file = target.substr(0, pos);
-          unsigned int target_line = atoi(target.substr(pos + 1).c_str());
-          
-          // one target line, score +1
-          if (!target_file.compare(filename) && target_line == line) bb_score++;
-
-        }
-        // TODO: necessary? - rosen
-        if (bb_score > 255) bb_score = 255;
-
-        /* XOR values of operands in a block; 
-            Connect bytes in an input with operands of cmp or switch in a block; 
-            More interested in bytes that can flip conditions.*/
-        if (isa<CmpInst>(I)){
-            getCmpOpValue(I, cur_loc);
-        } else if (isa<SwitchInst>(I)){
-            getSwValue(I, cur_loc);
-        }
-
-      }
 
       /* Load prev_loc */
 
@@ -357,12 +203,6 @@ bool AFLCoverage::runOnModule(Module &M) {
       IRB.CreateStore(Incr, MapPtrIdx)
           ->setMetadata(NoSanMetaId, NoneMetaNode);
 
-      /* Assign score to the current block */
-      Constant *BBScore = ConstantInt::get(Int8Ty, bb_score);
-      Constant *ScoreID = ConstantInt::get(Int32Ty, MAP_SIZE  + cur_loc);
-      Value *MapPtrScore = IRB.CreateGEP(MapPtr, ScoreID); //index
-      IRB.CreateStore(BBScore, MapPtrScore)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);; //assign score
 
       /* Set prev_loc to cur_loc >> 1 */
 
@@ -399,9 +239,13 @@ static void registerAFLPass(const PassManagerBuilder &,
 
 }
 
+// TODO: which one? early or last? - rosen
+// static RegisterStandardPasses RegisterAFLPass(
+//     PassManagerBuilder::EP_ModuleOptimizerEarly, registerAFLPass);
 
 static RegisterStandardPasses RegisterAFLPass(
-    PassManagerBuilder::EP_ModuleOptimizerEarly, registerAFLPass);
+    PassManagerBuilder::EP_OptimizerLast, registerAFLPass);
+
 
 static RegisterStandardPasses RegisterAFLPass0(
     PassManagerBuilder::EP_EnabledOnOptLevel0, registerAFLPass);

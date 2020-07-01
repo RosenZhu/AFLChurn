@@ -88,8 +88,7 @@
 #endif /* ^AFL_LIB */
 
 /********************    New Variables    *********************/
-EXP_ST u8* score_ptr;                 /* SHM with score of each block, BB_SCORE_SIZE */
-EXP_ST u64* xor_value_ptr;             /* SHM with value of XOR of each operand */
+
 
 /********************    AFL Variables    *********************/
 
@@ -260,10 +259,12 @@ struct queue_entry {
 
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
-      depth;                          /* Path depth                       */
+      depth,                          /* Path depth                       */
+      path_weight;                     /* Target weights in a path   */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
+
 
   struct queue_entry *next,           /* Next element, if any             */
                      *next_100;       /* 100 elements ahead               */
@@ -840,6 +841,8 @@ EXP_ST void destroy_queue(void) {
     ck_free(q);
     q = n;
 
+    
+
   }
 
 }
@@ -1366,7 +1369,8 @@ EXP_ST void setup_shm(void) {
   memset(virgin_tmout, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
-  shm_id = shmget(IPC_PRIVATE, MAP_SIZE + BB_SCORE_SIZE + OP_VALUE_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+
+  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");
 
@@ -1384,11 +1388,6 @@ EXP_ST void setup_shm(void) {
   ck_free(shm_str);
 
   trace_bits = shmat(shm_id, NULL, 0);
-
-  // score pointer
-  score_ptr = trace_bits + MAP_SIZE;
-  // result of XOR pointer
-  xor_value_ptr = (u64*) (trace_bits + MAP_SIZE + BB_SCORE_SIZE);
   
   if (trace_bits == (void *)-1) PFATAL("shmat() failed");
 
@@ -2609,6 +2608,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
 
     u32 cksum;
+    
 
     if (!first_run && !(stage_cur % stats_update_freq)) show_stats();
 
@@ -2653,6 +2653,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
       } else {
 
         q->exec_cksum = cksum;
+        
         memcpy(first_trace, trace_bits, MAP_SIZE);
 
       }
@@ -2673,6 +2674,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->bitmap_size = count_bytes(trace_bits);
   q->handicap    = handicap;
   q->cal_failed  = 0;
+  //q->path_weight = ;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
