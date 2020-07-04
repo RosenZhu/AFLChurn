@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/home/xgzhu/apps/DeepTaintFuzz/LLVM/clang+llvm/include"
+                "/home/xgzhu/apps/DeepTaintFuzz/LLVM/clang+llvm/include",
+                "/home/xgzhu/apps/libgit2/install/include"
             ],
             "defines": [],
             "compilerPath": "/home/xgzhu/apps/DeepTaintFuzz/LLVM/clang+llvm/bin/clang",

@@ -76,6 +76,7 @@
         "filesystem": "cpp",
         "memory_resource": "cpp",
         "cinttypes": "cpp",
-        "*.def": "cpp"
+        "*.def": "cpp",
+        "set": "cpp"
     }
 }
