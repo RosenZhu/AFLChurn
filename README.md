@@ -34,10 +34,12 @@ install libgit2 [v1.0.1](https://github-production-release-asset-2e65be.s3.amazo
 envs:
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
+    export LIBGIT_INC=/path/to/libgit2/include
+    export LIBGIT_LIB=/path/to/libgit2/lib
 
-Change `LIBGIT_INC` and `LIBGIT_LIB` in llvm_mode/Makefile to the installed libgit2 path.
+`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
-## compile target program
+#### compile target program
 
     g++ prog.cpp -o gexp -I/path/to/libgit2/include  -L/path/to/libgit2/lib -lgit2
 
