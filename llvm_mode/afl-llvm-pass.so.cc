@@ -182,15 +182,15 @@ bool AFLCoverage::runOnModule(Module &M) {
   std::string funcdir, funcfile, git_path;
   git_buf gitDir = {0,0,0};
   git_repository *repo = nullptr;
-  int git_no_found = 1; //1: no repository found; 0: found
+  int git_no_found = 1; // 0: found; otherwise, not found
 
   for (auto &F : M){
     /* Get repository path and object */
-    if (funcfile.empty()){ //(repo == nullptr){ //
+    if (git_no_found){ //(repo == nullptr){ //
       DISubprogram *sp = F.getSubprogram();
       funcdir = sp->getDirectory().str();
       funcfile = sp->getFilename().str();
-      std::cout << "dir: "<< funcdir << std::endl;
+      //std::cout << "dir: "<< funcdir << std::endl;
       // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
       if (!startsWith(funcfile, "/")){
         funcdir.append("/");
@@ -198,7 +198,7 @@ bool AFLCoverage::runOnModule(Module &M) {
         funcfile.assign(funcdir);
       }
 
-      std::cout << "file: " << funcfile << std::endl;
+      //std::cout << "file: " << funcfile << std::endl;
       
       git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
       
@@ -206,15 +206,21 @@ bool AFLCoverage::runOnModule(Module &M) {
         if (git_repository_open(&repo, gitDir.ptr)) git_no_found = 1;
       }
 
-      if (!git_no_found) git_path.assign(gitDir.ptr, gitDir.size);
+      if (!git_no_found){
+        git_path.assign(gitDir.ptr, gitDir.size);
+        // remove ".git/" at the end of git_path
+        std::string git_end(".git/"); 
+        std::size_t pos = git_path.rfind(git_end.c_str());
+        if (pos != std::string::npos) git_path.erase(pos, git_end.length());
+      } 
 
-      std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
+      //std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
           
     }
     
 
     for (auto &BB : F) {
-
+      
       BasicBlock::iterator IP = BB.getFirstInsertionPt();
       IRBuilder<> IRB(&(*IP));
 
@@ -229,12 +235,23 @@ bool AFLCoverage::runOnModule(Module &M) {
       git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
       git_blame *blame = NULL;
       u64 bb_score = 0, ns = 0, ave_score = 0;
-      git_commit *commit;
-      time_t time, cur_time;
+      git_commit *commit = NULL;
+      time_t time, cur_time = std::time(0);
       int weight;
+      std::string pdir("../");
+      std::size_t pos;
+      
+      // /* Randomly get an instruction in a block */
+      // size_t lenBB = BB.getInstList().size();
       
       bb_lines.clear();
+      bb_lines.insert(0);
       for (auto &I: BB){
+      // for (int bi=0; bi < 3 && bb_score == 0; bi ++){ // 3 chances to select a non-zero-weight instruction
+      //   auto iit =  BB.getInstList().begin();
+      //   std::advance(iit, AFL_R(lenBB));
+      //   auto &I = (*iit);
+
         line = 0;
         std::string filename, instdir;
         /* Connect targets with instructions */
@@ -254,19 +271,14 @@ bool AFLCoverage::runOnModule(Module &M) {
           /* take care of git blame path: relative to repo dir */
           if (!filename.empty()){
             if (startsWith(filename, "/")){
-              // remove ".git/" at the end of git_path
-              std::string git_end(".git/");
-              std::size_t pos = git_path.rfind(git_end.c_str());
-              if (pos != std::string::npos) git_path.erase(pos, git_end.length());
               // remove current string of git_path from filename
               filename.erase(0, git_path.length());  // relative path
             } else{
               // remove "../" if exists any
-              std::string pdir("../");
-              std::size_t pos;
               while (startsWith(filename, pdir)){
-                pos = filename.find(pdir.c_str());
-                if (pos != std::string::npos) filename.erase(pos, pdir.length());
+                // pos = filename.find(pdir.c_str());
+                // if (pos != std::string::npos) filename.erase(pos, pdir.length());
+                filename.erase(0, pdir.length());
               }
             }
             
@@ -279,11 +291,12 @@ bool AFLCoverage::runOnModule(Module &M) {
                 if (hunk){
                   if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
                     time  = git_commit_time(commit);
-                    cur_time = std::time(0);
-                    weight = 365*20 - (cur_time - time) / 86400; // days
+            
+                    weight = 365 * 20 - (cur_time - time) / 86400; // days
                     if (weight < 0) weight = 0;
+                    // bb_score = weight;
                     bb_score += weight;
-                    ns ++;
+                    ns++;
                   }
                 }
               }
@@ -295,11 +308,15 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (ns != 0){
         ave_score = bb_score / ns;
       }
-      
-      git_blame_free(blame);
-      git_commit_free(commit);
+
+      if (blame)
+        git_blame_free(blame);
+      if (commit)
+        git_commit_free(commit);
 
       std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
+
+      
       /* Load prev_loc */
 
       LoadInst *PrevLoc = IRB.CreateLoad(AFLPrevLoc);
@@ -327,6 +344,25 @@ bool AFLCoverage::runOnModule(Module &M) {
       StoreInst *Store =
           IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
+
+      /* Add score */
+      Constant *MapWtLoc = ConstantInt::get(Int64Ty, MAP_SIZE);
+      Constant *MapCntLoc = ConstantInt::get(Int64Ty, MAP_SIZE + 8);
+      Constant *Weight = ConstantInt::get(Int64Ty, ave_score);
+      // add to shm, weight
+      Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
+      LoadInst *MapWt = IRB.CreateLoad(Int64Ty, MapWtPtr);
+      MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
+      Value *IncWt = IRB.CreateAdd(MapWt, Weight);
+      IRB.CreateStore(IncWt, MapWtPtr)
+        ->setMetadata(NoSanMetaId, NoneMetaNode);
+      // add to shm, block count
+      Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
+      LoadInst *MapCnt = IRB.CreateLoad(Int64Ty, MapCntPtr);
+      MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
+      Value *IncrCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int64Ty, 1));
+      IRB.CreateStore(IncrCnt, MapCntPtr)
+              ->setMetadata(NoSanMetaId, NoneMetaNode);
 
       inst_blocks++;
 

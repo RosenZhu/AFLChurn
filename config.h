@@ -328,6 +328,9 @@
 #define MAP_SIZE_POW2       16
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
+/* Path weight. 8 bytes for weights, 8 bytes for block hit-counts */
+#define WEIGHT_SHM         16
+
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 

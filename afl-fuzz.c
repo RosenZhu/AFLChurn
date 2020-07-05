@@ -1370,7 +1370,7 @@ EXP_ST void setup_shm(void) {
   memset(virgin_crash, 255, MAP_SIZE);
 
 
-  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+  shm_id = shmget(IPC_PRIVATE, MAP_SIZE + WEIGHT_SHM, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");
 
@@ -2296,7 +2296,7 @@ static u8 run_target(char** argv, u32 timeout) {
      must prevent any earlier operations from venturing into that
      territory. */
 
-  memset(trace_bits, 0, MAP_SIZE);
+  memset(trace_bits, 0, MAP_SIZE + WEIGHT_SHM);
   MEM_BARRIER();
 
   /* If we're running in "dumb" mode, we can't rely on the fork server
@@ -2674,7 +2674,12 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->bitmap_size = count_bytes(trace_bits);
   q->handicap    = handicap;
   q->cal_failed  = 0;
-  //q->path_weight = ;
+  
+  q->path_weight = 0;
+  u64 *pwt = (u64*)(trace_bits + MAP_SIZE);
+  if ((*(pwt + 1)) != 0){
+    q->path_weight = (*pwt) / (*(pwt + 1));
+  }
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;

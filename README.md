@@ -10,6 +10,8 @@ Linux 18.04, 64-bit system.
 
 LLVM 7.0.1
 
+libgit2 v1.0.1
+
 ## Install
 in afl root dir
 
