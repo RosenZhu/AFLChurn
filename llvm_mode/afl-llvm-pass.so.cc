@@ -34,6 +34,10 @@
 #include "../config.h"
 #include "../debug.h"
 
+#include "git2.h"
+#include <set>
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -60,10 +64,7 @@
 
 using namespace llvm;
 
-cl::opt<std::string> TargetsFile(
-    "targets",
-    cl::desc("Input file containing the target lines of code."),
-    cl::value_desc("targets"));
+
 
 namespace {
 
@@ -93,8 +94,7 @@ namespace {
       // StringRef getPassName() const override {
       //  return "American Fuzzy Lop Instrumentation";
       // }
-      void getCmpOpValue(Instruction& Inst, unsigned int cur_id);
-      void getSwValue(Instruction& Inst, unsigned int cur_id);
+
       void setValueNonSan(Value *v);
       void setInsNonSan(Instruction *ins);
 
@@ -115,114 +115,18 @@ void AFLCoverage::setInsNonSan(Instruction *ins) {
     ins->setMetadata(NoSanMetaId, NoneMetaNode);
 }
 
-// get value of the operand in cmp instruction
-void AFLCoverage::getCmpOpValue(Instruction& Instr, unsigned int cur_id){
-    Instruction *InsertPoint = Instr.getNextNode();
-    if (!InsertPoint || isa<ConstantInt>(Instr)) return;
-   
-    CmpInst *Cmp = dyn_cast<CmpInst>(&Instr);
-    Value *OpArg[2];
-    OpArg[0] = Cmp->getOperand(0);
-    OpArg[1] = Cmp->getOperand(1);
 
-
-    Type *OpType = OpArg[0]->getType();
-    Value *Shv0, *Shv1;
-
-    IRBuilder<> IRCMP(InsertPoint);
-
-    if (OpType->isFloatTy()){
-        Shv0 = IRCMP.CreateBitCast(OpArg[0], Int32Ty);
-        setValueNonSan(Shv0);
-        Shv0 = IRCMP.CreateZExt(Shv0, Int64Ty);
-        Shv1 = IRCMP.CreateBitCast(OpArg[1], Int32Ty);
-        setValueNonSan(Shv1);
-        Shv1 = IRCMP.CreateZExt(Shv1, Int64Ty);
-    }else if (OpType->isDoubleTy()){
-        Shv0 = IRCMP.CreateBitCast(OpArg[0], Int64Ty);
-        setValueNonSan(Shv0);
-        Shv1 = IRCMP.CreateBitCast(OpArg[1], Int64Ty);
-        setValueNonSan(Shv1);
-    }else if (OpType->isPointerTy()) {
-        Shv0 = IRCMP.CreatePtrToInt(OpArg[0], Int64Ty);
-        Shv1 = IRCMP.CreatePtrToInt(OpArg[1], Int64Ty);
-    } else if (OpType->isIntegerTy() && OpType->getIntegerBitWidth() < 64) {
-        Shv0 = IRCMP.CreateZExt(OpArg[0], Int64Ty); //zero extension instruction 
-        Shv1 = IRCMP.CreateZExt(OpArg[1], Int64Ty); //zero extension instruction 
-    }else if (OpType->isIntegerTy() && OpType->getIntegerBitWidth() == 64){
-        Shv0 = OpArg[0];
-        Shv1 = OpArg[1];
-    }else{ //TODO: OpType->isVectorTy()?
-        return;
-    }
-    
-    LoadInst *MapBasePtr = IRCMP.CreateLoad(AFLMapPtr); //load base SHM pointer
-    MapBasePtr->setMetadata(NoSanMetaId, NoneMetaNode);
-
-    Constant *ValID = ConstantInt::get(Int32Ty, MAP_SIZE + BB_SCORE_SIZE + cur_id * 8);
-    Value *MapPtrValIndex = IRCMP.CreateGEP(MapBasePtr, ValID); //index
-
-    /* Use XOR as the hash function of operands; 
-        Check if one of the operands in a block changes when one byte in a seed is mutated: 
-          if result of XOR changes, one or more of the operands change.
-      TODO: change hash function? -rosen */
-
-    Value *OPRes = IRCMP.CreateXor(Shv0, Shv1);
-    LoadInst *MapOpVal = IRCMP.CreateLoad(Int64Ty, MapPtrValIndex);
-    Value *memRes = IRCMP.CreateXor(OPRes, MapOpVal);
-
-    IRCMP.CreateStore(memRes, MapPtrValIndex)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);
-
-}
-
-// get value of switch
-void AFLCoverage::getSwValue(Instruction& Instr, unsigned int cur_id){
-    SwitchInst *Sw = dyn_cast<SwitchInst>(&Instr);
-    Value *Cond = Sw->getCondition();
-
-    if (!(Cond && Cond->getType()->isIntegerTy() && !isa<ConstantInt>(Cond))) {
-        return;
-    }
-
-    IRBuilder<> IRSW(Sw);
-    Value *CondExt = IRSW.CreateZExt(Cond, Int64Ty);
-  
-    LoadInst *MapBasePtr = IRSW.CreateLoad(AFLMapPtr); //load base SHM pointer
-    MapBasePtr->setMetadata(NoSanMetaId, NoneMetaNode);
-
-    Constant *ValID = ConstantInt::get(Int32Ty, MAP_SIZE + BB_SCORE_SIZE + cur_id * 8);
-    Value *MapPtrValIndex = IRSW.CreateGEP(MapBasePtr, ValID); //index
-
-    /* Use XOR as the hash function of operands; 
-        Check if one of the operands in a block changes when one byte in a seed is mutated: 
-          if result of XOR changes, one or more of the operands change.
-      TODO: change hash function? -rosen */
-
-    LoadInst *MapOpVal = IRSW.CreateLoad(Int64Ty, MapPtrValIndex);
-    Value *memRes = IRSW.CreateXor(CondExt, MapOpVal);
-
-    IRSW.CreateStore(memRes, MapPtrValIndex)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);
-
+bool startsWith(std::string big_str, std::string small_str){
+  if (big_str.compare(0, small_str.length(), small_str) == 0) return true;
+  else return false;
 }
 
 
 bool AFLCoverage::runOnModule(Module &M) {
 
-  /* get change-burst targets */
-  std::list<std::string> targets;
-
-  if (!TargetsFile.empty()) {
-    std::ifstream targetsfile(TargetsFile);
-    std::string line;
-    while (std::getline(targetsfile, line))
-      targets.push_back(line);
-    targetsfile.close();
-  }
 
   LLVMContext &C = M.getContext();
-
+  
   VoidTy = Type::getVoidTy(C);
   Int1Ty = IntegerType::getInt1Ty(C);
   Int8Ty = IntegerType::getInt8Ty(C);
@@ -269,17 +173,54 @@ bool AFLCoverage::runOnModule(Module &M) {
       0, GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
   /* Instrument all the things! */
+  git_libgit2_init();
 
   int inst_blocks = 0;
-  int bb_score;
+
+  std::set<unsigned> bb_lines;
+  unsigned line;
+  std::string funcdir, funcfile, git_path;
+  git_buf gitDir = {0,0,0};
+  git_repository *repo = nullptr;
+  int git_no_found = 1; // 0: found; otherwise, not found
 
   for (auto &F : M){
+    /* Get repository path and object */
+    if (git_no_found){ //(repo == nullptr){ //
+      DISubprogram *sp = F.getSubprogram();
+      funcdir = sp->getDirectory().str();
+      funcfile = sp->getFilename().str();
+      //std::cout << "dir: "<< funcdir << std::endl;
+      // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
+      if (!startsWith(funcfile, "/")){
+        funcdir.append("/");
+        funcdir.append(funcfile);
+        funcfile.assign(funcdir);
+      }
+
+      //std::cout << "file: " << funcfile << std::endl;
+      
+      git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
+      
+      if (!git_no_found){
+        if (git_repository_open(&repo, gitDir.ptr)) git_no_found = 1;
+      }
+
+      if (!git_no_found){
+        git_path.assign(gitDir.ptr, gitDir.size);
+        // remove ".git/" at the end of git_path
+        std::string git_end(".git/"); 
+        std::size_t pos = git_path.rfind(git_end.c_str());
+        if (pos != std::string::npos) git_path.erase(pos, git_end.length());
+      } 
+
+      //std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
+          
+    }
+    
 
     for (auto &BB : F) {
-      std::string filename;
-      unsigned line;
-      bb_score = 0; //score, according to change burst
-
+      
       BasicBlock::iterator IP = BB.getFirstInsertionPt();
       IRBuilder<> IRB(&(*IP));
 
@@ -291,51 +232,91 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
+      git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
+      git_blame *blame = NULL;
+      u64 bb_score = 0, ns = 0, ave_score = 0;
+      git_commit *commit = NULL;
+      time_t time, cur_time = std::time(0);
+      int weight;
+      std::string pdir("../");
+      std::size_t pos;
+      
+      // /* Randomly get an instruction in a block */
+      // size_t lenBB = BB.getInstList().size();
+      
+      bb_lines.clear();
+      bb_lines.insert(0);
       for (auto &I: BB){
+      // for (int bi=0; bi < 3 && bb_score == 0; bi ++){ // 3 chances to select a non-zero-weight instruction
+      //   auto iit =  BB.getInstList().begin();
+      //   std::advance(iit, AFL_R(lenBB));
+      //   auto &I = (*iit);
 
+        line = 0;
+        std::string filename, instdir;
         /* Connect targets with instructions */
         DILocation *Loc = I.getDebugLoc().get(); 
-        if (Loc){
+        if (Loc && !git_no_found){
           filename = Loc->getFilename().str();
+          instdir = Loc->getDirectory().str();
           line = Loc->getLine();
           if (filename.empty()){
             DILocation *oDILoc = Loc->getInlinedAt();
             if (oDILoc){
               line = oDILoc->getLine();
               filename = oDILoc->getFilename().str();
+              instdir = oDILoc->getDirectory().str();
             }
+          } 
+          /* take care of git blame path: relative to repo dir */
+          if (!filename.empty()){
+            if (startsWith(filename, "/")){
+              // remove current string of git_path from filename
+              filename.erase(0, git_path.length());  // relative path
+            } else{
+              // remove "../" if exists any
+              while (startsWith(filename, pdir)){
+                // pos = filename.find(pdir.c_str());
+                // if (pos != std::string::npos) filename.erase(pos, pdir.length());
+                filename.erase(0, pdir.length());
+              }
+            }
+            
+            /* calculate score of a block */
+            if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
+              if (!bb_lines.count(line)){
+                bb_lines.insert(line);
+                const git_blame_hunk *hunk = git_blame_get_hunk_byline(blame, line);
+                
+                if (hunk){
+                  if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
+                    time  = git_commit_time(commit);
+            
+                    weight = 365 * 20 - (cur_time - time) / 86400; // days
+                    if (weight < 0) weight = 0;
+                    // bb_score = weight;
+                    bb_score += weight;
+                    ns++;
+                  }
+                }
+              }
+            } 
           }
         }
-        /* score for each block */
-        for (std::list<std::string>::iterator it = targets.begin(); it != targets.end(); ++it) {
-
-          std::string target = *it;
-          std::size_t found = target.find_last_of("/\\");
-          if (found != std::string::npos)
-            target = target.substr(found + 1);
-
-          std::size_t pos = target.find_last_of(":");
-          std::string target_file = target.substr(0, pos);
-          unsigned int target_line = atoi(target.substr(pos + 1).c_str());
-          
-          // one target line, score +1
-          if (!target_file.compare(filename) && target_line == line) bb_score++;
-
-        }
-        // TODO: necessary? - rosen
-        if (bb_score > 255) bb_score = 255;
-
-        /* XOR values of operands in a block; 
-            Connect bytes in an input with operands of cmp or switch in a block; 
-            More interested in bytes that can flip conditions.*/
-        if (isa<CmpInst>(I)){
-            getCmpOpValue(I, cur_loc);
-        } else if (isa<SwitchInst>(I)){
-            getSwValue(I, cur_loc);
-        }
-
       }
 
+      if (ns != 0){
+        ave_score = bb_score / ns;
+      }
+
+      if (blame)
+        git_blame_free(blame);
+      if (commit)
+        git_commit_free(commit);
+
+      std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
+
+      
       /* Load prev_loc */
 
       LoadInst *PrevLoc = IRB.CreateLoad(AFLPrevLoc);
@@ -357,18 +338,31 @@ bool AFLCoverage::runOnModule(Module &M) {
       IRB.CreateStore(Incr, MapPtrIdx)
           ->setMetadata(NoSanMetaId, NoneMetaNode);
 
-      /* Assign score to the current block */
-      Constant *BBScore = ConstantInt::get(Int8Ty, bb_score);
-      Constant *ScoreID = ConstantInt::get(Int32Ty, MAP_SIZE  + cur_loc);
-      Value *MapPtrScore = IRB.CreateGEP(MapPtr, ScoreID); //index
-      IRB.CreateStore(BBScore, MapPtrScore)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);; //assign score
 
       /* Set prev_loc to cur_loc >> 1 */
 
       StoreInst *Store =
           IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
+
+      /* Add score */
+      Constant *MapWtLoc = ConstantInt::get(Int64Ty, MAP_SIZE);
+      Constant *MapCntLoc = ConstantInt::get(Int64Ty, MAP_SIZE + 8);
+      Constant *Weight = ConstantInt::get(Int64Ty, ave_score);
+      // add to shm, weight
+      Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
+      LoadInst *MapWt = IRB.CreateLoad(Int64Ty, MapWtPtr);
+      MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
+      Value *IncWt = IRB.CreateAdd(MapWt, Weight);
+      IRB.CreateStore(IncWt, MapWtPtr)
+        ->setMetadata(NoSanMetaId, NoneMetaNode);
+      // add to shm, block count
+      Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
+      LoadInst *MapCnt = IRB.CreateLoad(Int64Ty, MapCntPtr);
+      MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
+      Value *IncrCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int64Ty, 1));
+      IRB.CreateStore(IncrCnt, MapCntPtr)
+              ->setMetadata(NoSanMetaId, NoneMetaNode);
 
       inst_blocks++;
 
@@ -387,6 +381,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
+  if (repo != nullptr)
+    git_repository_free(repo);
+
+  git_libgit2_shutdown();
+
   return true;
 
 }
@@ -399,9 +398,13 @@ static void registerAFLPass(const PassManagerBuilder &,
 
 }
 
+// TODO: which one? early or last? - rosen
+// static RegisterStandardPasses RegisterAFLPass(
+//     PassManagerBuilder::EP_ModuleOptimizerEarly, registerAFLPass);
 
 static RegisterStandardPasses RegisterAFLPass(
-    PassManagerBuilder::EP_ModuleOptimizerEarly, registerAFLPass);
+    PassManagerBuilder::EP_OptimizerLast, registerAFLPass);
+
 
 static RegisterStandardPasses RegisterAFLPass0(
     PassManagerBuilder::EP_EnabledOnOptLevel0, registerAFLPass);

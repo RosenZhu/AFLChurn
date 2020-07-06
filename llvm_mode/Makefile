@@ -20,6 +20,11 @@ PREFIX      ?= /usr/local
 HELPER_PATH  = $(PREFIX)/lib/afl
 BIN_PATH     = $(PREFIX)/bin
 
+LIBGIT_INC	 ?=  /home/xgzhu/apps/libgit2/install/include
+LIBGIT_LIB	 ?=  /home/xgzhu/apps/libgit2/install/lib
+
+LDFLAGS		 =  -I$(LIBGIT_INC)  -L$(LIBGIT_LIB) -lgit2
+
 VERSION     = $(shell grep '^\#define VERSION ' ../config.h | cut -d '"' -f2)
 
 LLVM_CONFIG ?= llvm-config

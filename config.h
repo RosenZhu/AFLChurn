@@ -328,10 +328,9 @@
 #define MAP_SIZE_POW2       16
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
-/* shared memory to store score of each block */
-#define BB_SCORE_SIZE      MAP_SIZE
-/* shared memory to store values of operands, 64 bits for each */
-#define OP_VALUE_SIZE      (8 * MAP_SIZE)
+/* Path weight. 8 bytes for weights, 8 bytes for block hit-counts */
+#define WEIGHT_SHM         16
+
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 
