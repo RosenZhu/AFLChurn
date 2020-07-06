@@ -260,7 +260,7 @@ struct queue_entry {
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
       depth,                          /* Path depth                       */
-      path_weight;                     /* Target weights in a path   */
+      path_weight;                    /* Weights for a path; the smaller, the better */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
@@ -2674,7 +2674,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->bitmap_size = count_bytes(trace_bits);
   q->handicap    = handicap;
   q->cal_failed  = 0;
-  
+
   q->path_weight = 0;
   u64 *pwt = (u64*)(trace_bits + MAP_SIZE);
   if ((*(pwt + 1)) != 0){

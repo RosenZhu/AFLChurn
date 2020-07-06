@@ -17,7 +17,11 @@ in afl root dir
 
     make clean all
     cd llvm_mode
+    export LIBGIT_INC=/path/to/libgit2/include
+    export LIBGIT_LIB=/path/to/libgit2/lib
     make clean all
+
+`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
 ### install libgit2
 install OpenSSL (see [troubleshooting](https://github.com/libgit2/libgit2/blob/master/docs/troubleshooting.md)).
@@ -34,10 +38,7 @@ install libgit2 [v1.0.1](https://github-production-release-asset-2e65be.s3.amazo
 envs:
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
-    export LIBGIT_INC=/path/to/libgit2/include
-    export LIBGIT_LIB=/path/to/libgit2/lib
-
-`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
+    
 
 #### compile target program
 
@@ -47,10 +48,12 @@ envs:
 
     -l:libgit2.so
 
-### If use configure to generate makefile, use absolute path to point configure
+### about configure
+If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure
 
-For example, if the path of the file "configure" is "/home/source/configure", then,
+For example, if the path of the file "configure" is "/home/source/configure", and the build directory is "/home/mybuild/", then, 
 
+    cd /home/mybuild
     /home/source/configure [other parameters]
 
  

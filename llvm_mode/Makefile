@@ -20,8 +20,10 @@ PREFIX      ?= /usr/local
 HELPER_PATH  = $(PREFIX)/lib/afl
 BIN_PATH     = $(PREFIX)/bin
 
-LIBGIT_INC	 ?=  /home/xgzhu/apps/libgit2/install/include
-LIBGIT_LIB	 ?=  /home/xgzhu/apps/libgit2/install/lib
+LIBGIT_INC	 =  /home/xgzhu/apps/libgit2/install/include
+LIBGIT_LIB	 =  /home/xgzhu/apps/libgit2/install/lib
+# LIBGIT_INC	 ?=  /usr/local/include
+# LIBGIT_LIB	 ?=  /usr/local/lib
 
 LDFLAGS		 =  -I$(LIBGIT_INC)  -L$(LIBGIT_LIB) -lgit2
 
