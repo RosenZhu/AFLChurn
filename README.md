@@ -49,6 +49,7 @@ envs:
     -l:libgit2.so
 
 ### about configure
+#### build outside the source directory
 If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure
 
 For example, if the path of the file "configure" is "/home/source/configure", and the build directory is "/home/mybuild/", then, 
@@ -56,5 +57,10 @@ For example, if the path of the file "configure" is "/home/source/configure", an
     cd /home/mybuild
     /home/source/configure [other parameters]
 
- 
+#### build inside the source directory
+Build as normal. Suppose the path of the file "configure" is "/home/source/configure", 
+
+    cd /home/source/
+    mkdir build && cd build
+    ../configure [other parameters]
 

@@ -35,7 +35,9 @@
 #include "../debug.h"
 
 #include "git2.h"
+//#include <string.h>
 #include <set>
+#include <map>
 
 
 #include <stdio.h>
@@ -122,6 +124,90 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
+/*
+  Calculate score for a new source file, which is just met.
+  One file is calculated only once.?
+  filename: relative path to git path
+  git_path: maybe used to write files?
+*/
+bool calScore4NewFile(git_repository *repo, const std::string &git_path, const std::string &filename, std::map<std::string, std::map<unsigned int, u64>> &all_scores){
+  git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
+  git_blame *blame = NULL;
+  git_commit *commit = NULL;
+  time_t time, cur_time = std::time(0);
+  unsigned int break_on_null_hunk, line;
+  u64 bb_score;
+  char spec[1024] = {0};
+  git_blob *blob;
+  git_object *obj;
+  const char *rawdata;
+  git_object_size_t i, rawsize;
+
+  std::map<unsigned int, u64> line_score;
+
+  if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
+
+    if (git_oid_is_zero(&blameopts.newest_commit))
+      strcpy(spec, "HEAD");
+    else
+      git_oid_tostr(spec, sizeof(spec), &blameopts.newest_commit);
+
+    strcat(spec, ":");
+    strcat(spec, filename.c_str());
+
+    if (git_revparse_single(&obj, repo, spec)){
+      if (blame) git_blame_free(blame);
+      return false;
+    }
+
+    if (git_blob_lookup(&blob, repo, git_object_id(obj))){
+      if (blame) git_blame_free(blame);
+      git_object_free(obj);
+      return false;
+    }
+
+    git_object_free(obj);
+
+    rawdata = (const char*)git_blob_rawcontent(blob);
+    rawsize = git_blob_rawsize(blob);
+
+    line = 1;
+    i = 0;
+    break_on_null_hunk = 0;
+
+    while(i < rawsize){
+      const char *eol = (const char*)memchr(rawdata + i, '\n', (size_t)(rawsize - i));
+      const git_blame_hunk *hunk = git_blame_get_hunk_byline(blame, line);
+
+      if (break_on_null_hunk && !hunk)
+        break;
+
+      if (hunk){
+        break_on_null_hunk = 1;
+        if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
+          time  = git_commit_time(commit);
+          bb_score = (cur_time - time) / 86400; // days; the smaller, the more important
+          line_score[line] = bb_score;
+        }
+      }
+
+      i = (int)(eol - rawdata + 1);
+      line++;
+    }
+
+    all_scores[filename] = line_score;
+
+    if (blame)  git_blame_free(blame);
+    if (commit) git_commit_free(commit);
+    if (blob) git_blob_free(blob);
+
+    return true;
+  } else {
+    if (blame)  git_blame_free(blame);
+    return false;
+  }
+  
+}
 
 bool AFLCoverage::runOnModule(Module &M) {
 
@@ -177,57 +263,62 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   int inst_blocks = 0;
 
-  std::set<unsigned> bb_lines;
-  unsigned line;
+  std::set<unsigned int> bb_lines;
+  unsigned int line;
   std::string git_path;
   git_repository *repo = nullptr;
   int git_no_found = 1; // 0: found; otherwise, not found
 
+  // file name (absolute path): line NO. , score
+  std::map<std::string, std::map<unsigned int, u64>> map_scores;
+  // file name has been processed and the result is true/false
+  std::map<std::string, bool> file_sucess;
+
   for (auto &F : M){
     /* Get repository path and object */
-    if (git_no_found){ //(repo == nullptr){ //
+    if (git_no_found){
       SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
       std::string funcdir, funcfile;
       git_buf gitDir = {0,0,0};
-
       F.getAllMetadata(MDs);
       for (auto &MD : MDs) {
         if (MDNode *N = MD.second) {
           if (auto *subProgram = dyn_cast<DISubprogram>(N)) {
             funcfile = subProgram->getFilename().str();
             funcdir = subProgram->getDirectory().str();
-            break;
+
+            if (!funcfile.empty()){
+              //std::cout << "dir: "<< funcdir << std::endl;
+              // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
+              if (!startsWith(funcfile, "/")){
+                funcdir.append("/");
+                funcdir.append(funcfile);
+                funcfile.assign(funcdir);
+              }
+
+              //std::cout << "file: " << funcfile << std::endl;
+              
+              git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
+              
+              if (!git_no_found){
+                if (git_repository_open(&repo, gitDir.ptr)) git_no_found = 1;
+              }
+
+              if (!git_no_found){
+                git_path.assign(gitDir.ptr, gitDir.size);
+                // remove ".git/" at the end of git_path
+                std::string git_end(".git/"); 
+                std::size_t pos = git_path.rfind(git_end.c_str());
+                if (pos != std::string::npos) git_path.erase(pos, git_end.length());
+
+                //std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
+
+                break;
+              }
+            }
+              
           }
         }
-      }
-      
-      if (!funcfile.empty()){
-          //std::cout << "dir: "<< funcdir << std::endl;
-          // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
-          if (!startsWith(funcfile, "/")){
-            funcdir.append("/");
-            funcdir.append(funcfile);
-            funcfile.assign(funcdir);
-          }
-
-          //std::cout << "file: " << funcfile << std::endl;
-          
-          git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
-          
-          if (!git_no_found){
-            if (git_repository_open(&repo, gitDir.ptr)) git_no_found = 1;
-          }
-
-          if (!git_no_found){
-            git_path.assign(gitDir.ptr, gitDir.size);
-            // remove ".git/" at the end of git_path
-            std::string git_end(".git/"); 
-            std::size_t pos = git_path.rfind(git_end.c_str());
-            if (pos != std::string::npos) git_path.erase(pos, git_end.length());
-          } 
-
-          //std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
-        
       }
     }
     
@@ -245,14 +336,10 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
-      git_blame *blame = NULL;
       u64 bb_score = 0, ns = 0, ave_score = 0;
-      git_commit *commit = NULL;
-      time_t time, cur_time = std::time(0);
+      
       std::string pdir("../");
    
- 
       bb_lines.clear();
       bb_lines.insert(0);
       
@@ -276,35 +363,31 @@ bool AFLCoverage::runOnModule(Module &M) {
 
           /* take care of git blame path: relative to repo dir */
           if (!filename.empty()){
-
             if (startsWith(filename, "/")){
               // remove current string of git_path from filename
               filename.erase(0, git_path.length());  // relative path
             } else{
               // remove "../" if exists any
-              while (startsWith(filename, pdir)){
-                
+              while (startsWith(filename, pdir)){              
                 filename.erase(0, pdir.length());
               }
             }
             
             /* calculate score of a block */
-            if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
-              if (!bb_lines.count(line)){
-                bb_lines.insert(line);
-
-                const git_blame_hunk *hunk = git_blame_get_hunk_byline(blame, line); 
-                if (hunk){
-                  
-                  if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
-                    time  = git_commit_time(commit);
-                    bb_score += (cur_time - time) / 86400; // days; the smaller, the more important
-                    ns++;
-                  }
-                }
-
+            if (!bb_lines.count(line)){
+              bb_lines.insert(line);
+              
+              // the code file is not processed yet
+              if (!map_scores.count(filename)){
+                file_sucess[filename] = calScore4NewFile(repo, git_path, filename, map_scores);
               }
-          
+
+              if (map_scores.count(filename) && file_sucess[filename]){
+                if (map_scores[filename].count(line)){
+                  bb_score += map_scores[filename][line];
+                  ns++;
+                }
+              }
             }
           }
         }
@@ -312,13 +395,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       if (ns != 0){
         ave_score = bb_score / ns;
+      } else{
+        ave_score = 30 * 365; // punish or not? -- rosen
       }
 
-      if (blame)
-        git_blame_free(blame);
-      if (commit)
-        git_commit_free(commit);
-
+      
       std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
 
       
@@ -393,6 +474,12 @@ bool AFLCoverage::runOnModule(Module &M) {
     git_repository_free(repo);
 
   git_libgit2_shutdown();
+
+  // release map
+  for (auto it = map_scores.begin(); it != map_scores.end(); ++it){
+    it->second.clear();
+    map_scores.erase(it);
+  }
 
   return true;
 
