@@ -40,14 +40,6 @@ envs:
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
     
 
-#### compile target program
-
-    g++ prog.cpp -o gexp -I/path/to/libgit2/include  -L/path/to/libgit2/lib -lgit2
-
-    g++ gitexamp.cpp -o gexp -I/home/xgzhu/apps/libgit2/install/include  -L/home/xgzhu/apps/libgit2/install/lib -lgit2
-
-    -l:libgit2.so
-
 ### about configure
 #### build outside the source directory
 If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure

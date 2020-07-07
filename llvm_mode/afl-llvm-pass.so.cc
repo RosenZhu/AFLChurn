@@ -76,18 +76,18 @@ namespace {
 
       static char ID;
       
-      Type *VoidTy;
-      IntegerType *Int1Ty;
-      IntegerType *Int8Ty;
-      IntegerType *Int32Ty;
-      IntegerType *Int64Ty;
-      Type *Int8PtrTy;
-      Type *Int64PtrTy;
-      GlobalVariable *AFLMapPtr;
-      GlobalVariable *AFLPrevLoc;
+      // Type *VoidTy;
+      // IntegerType *Int1Ty;
+      // IntegerType *Int8Ty;
+      // IntegerType *Int32Ty;
+      // IntegerType *Int64Ty;
+      // Type *Int8PtrTy;
+      // Type *Int64PtrTy;
+      // GlobalVariable *AFLMapPtr;
+      // GlobalVariable *AFLPrevLoc;
 
-      unsigned NoSanMetaId;
-      MDTuple *NoneMetaNode;
+      // unsigned NoSanMetaId;
+      // MDTuple *NoneMetaNode;
 
       AFLCoverage() : ModulePass(ID) { }
 
@@ -127,10 +127,9 @@ bool startsWith(std::string big_str, std::string small_str){
 /*
   Calculate score for a new source file, which is just met.
   One file is calculated only once.?
-  filename: relative path to git path
-  git_path: maybe used to write files?
+  filename: relative path to file
 */
-bool calScore4NewFile(git_repository *repo, const std::string &git_path, const std::string &filename, std::map<std::string, std::map<unsigned int, u64>> &all_scores){
+bool calScore4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u64>> &all_scores){
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
   git_commit *commit = NULL;
@@ -213,6 +212,17 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   LLVMContext &C = M.getContext();
   
+  Type *VoidTy;
+  IntegerType *Int1Ty;
+  IntegerType *Int8Ty;
+  IntegerType *Int32Ty;
+  IntegerType *Int64Ty;
+  Type *Int8PtrTy;
+  Type *Int64PtrTy;
+  GlobalVariable *AFLMapPtr;
+  GlobalVariable *AFLPrevLoc;
+  unsigned NoSanMetaId;
+  MDTuple *NoneMetaNode;
   VoidTy = Type::getVoidTy(C);
   Int1Ty = IntegerType::getInt1Ty(C);
   Int8Ty = IntegerType::getInt8Ty(C);
@@ -220,7 +230,6 @@ bool AFLCoverage::runOnModule(Module &M) {
   Int64Ty = IntegerType::getInt64Ty(C);
   Int8PtrTy = PointerType::getUnqual(Int8Ty);
   Int64PtrTy = PointerType::getUnqual(Int64Ty);
-
   NoSanMetaId = C.getMDKindID("nosanitize");
   NoneMetaNode = MDNode::get(C, None);
 
@@ -271,8 +280,6 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   // file name (absolute path): line NO. , score
   std::map<std::string, std::map<unsigned int, u64>> map_scores;
-  // file name has been processed and the result is true/false
-  std::map<std::string, bool> file_sucess;
 
   for (auto &F : M){
     /* Get repository path and object */
@@ -357,7 +364,6 @@ bool AFLCoverage::runOnModule(Module &M) {
             if (oDILoc){
               line = oDILoc->getLine();
               filename = oDILoc->getFilename().str();
-              
             }
           }
 
@@ -379,10 +385,10 @@ bool AFLCoverage::runOnModule(Module &M) {
               
               // the code file is not processed yet
               if (!map_scores.count(filename)){
-                file_sucess[filename] = calScore4NewFile(repo, git_path, filename, map_scores);
+                calScore4NewFile(repo, filename, map_scores);
               }
 
-              if (map_scores.count(filename) && file_sucess[filename]){
+              if (map_scores.count(filename)){
                 if (map_scores[filename].count(line)){
                   bb_score += map_scores[filename][line];
                   ns++;
@@ -398,9 +404,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       } else{
         ave_score = 30 * 365; // punish or not? -- rosen
       }
-
-      
-      std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
+      //std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
 
       
       /* Load prev_loc */
@@ -438,7 +442,6 @@ bool AFLCoverage::runOnModule(Module &M) {
       Constant *Weight = ConstantInt::get(LargestType, ave_score);
       // add to shm, weight
       Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
-      //MapWtPtr = IRB.CreatePointerCast(MapWtPtr, LargestType->getPointerTo());
       LoadInst *MapWt = IRB.CreateLoad(LargestType, MapWtPtr);
       MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
       Value *IncWt = IRB.CreateAdd(MapWt, Weight);
@@ -446,7 +449,6 @@ bool AFLCoverage::runOnModule(Module &M) {
         ->setMetadata(NoSanMetaId, NoneMetaNode);
       // add to shm, block count
       Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
-      //MapCntPtr = IRB.CreatePointerCast(MapCntPtr, LargestType->getPointerTo());
       LoadInst *MapCnt = IRB.CreateLoad(LargestType, MapCntPtr);
       MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
       Value *IncrCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(LargestType, 1));
