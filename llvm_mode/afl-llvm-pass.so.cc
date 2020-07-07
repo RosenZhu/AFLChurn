@@ -126,7 +126,7 @@ bool startsWith(std::string big_str, std::string small_str){
 
 /*
   Calculate score for a new source file, which is just met.
-  One file is calculated only once.?
+  One file is calculated only once.
   filename: relative path to file
 */
 bool calScore4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u64>> &all_scores){
@@ -295,7 +295,6 @@ bool AFLCoverage::runOnModule(Module &M) {
             funcdir = subProgram->getDirectory().str();
 
             if (!funcfile.empty()){
-              //std::cout << "dir: "<< funcdir << std::endl;
               // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
               if (!startsWith(funcfile, "/")){
                 funcdir.append("/");
@@ -303,8 +302,6 @@ bool AFLCoverage::runOnModule(Module &M) {
                 funcfile.assign(funcdir);
               }
 
-              //std::cout << "file: " << funcfile << std::endl;
-              
               git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
               
               if (!git_no_found){
@@ -317,9 +314,6 @@ bool AFLCoverage::runOnModule(Module &M) {
                 std::string git_end(".git/"); 
                 std::size_t pos = git_path.rfind(git_end.c_str());
                 if (pos != std::string::npos) git_path.erase(pos, git_end.length());
-
-                //std::cout << "not found: " << git_no_found << "; git dir: "<< git_path << std::endl;
-
                 break;
               }
             }
@@ -401,11 +395,9 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       if (ns != 0){
         ave_score = bb_score / ns;
-      } else{
-        ave_score = 30 * 365; // punish or not? -- rosen
-      }
-      //std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
+      } 
 
+      //std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
       
       /* Load prev_loc */
 
@@ -436,24 +428,27 @@ bool AFLCoverage::runOnModule(Module &M) {
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
       /* Add score */
-      IntegerType *LargestType = Int64Ty;
-      Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
-      Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);
-      Constant *Weight = ConstantInt::get(LargestType, ave_score);
-      // add to shm, weight
-      Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
-      LoadInst *MapWt = IRB.CreateLoad(LargestType, MapWtPtr);
-      MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
-      Value *IncWt = IRB.CreateAdd(MapWt, Weight);
-      IRB.CreateStore(IncWt, MapWtPtr)
-        ->setMetadata(NoSanMetaId, NoneMetaNode);
-      // add to shm, block count
-      Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
-      LoadInst *MapCnt = IRB.CreateLoad(LargestType, MapCntPtr);
-      MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
-      Value *IncrCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(LargestType, 1));
-      IRB.CreateStore(IncrCnt, MapCntPtr)
-              ->setMetadata(NoSanMetaId, NoneMetaNode);
+      if (ns){ //only when score is assigned
+        IntegerType *LargestType = Int64Ty;
+        Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
+        Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);
+        Constant *Weight = ConstantInt::get(LargestType, ave_score);
+        // add to shm, weight
+        Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
+        LoadInst *MapWt = IRB.CreateLoad(LargestType, MapWtPtr);
+        MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
+        Value *IncWt = IRB.CreateAdd(MapWt, Weight);
+        IRB.CreateStore(IncWt, MapWtPtr)
+          ->setMetadata(NoSanMetaId, NoneMetaNode);
+        // add to shm, block count
+        Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
+        LoadInst *MapCnt = IRB.CreateLoad(LargestType, MapCntPtr);
+        MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
+        Value *IncrCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(LargestType, 1));
+        IRB.CreateStore(IncrCnt, MapCntPtr)
+                ->setMetadata(NoSanMetaId, NoneMetaNode);
+      }
+      
 
       inst_blocks++;
 
