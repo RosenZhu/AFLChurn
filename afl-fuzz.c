@@ -67,6 +67,8 @@
 #include <sys/ioctl.h>
 #include <sys/file.h>
 
+#include <math.h>
+
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined (__OpenBSD__)
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
@@ -255,12 +257,13 @@ struct queue_entry {
       fs_redundant;                   /* Marked as redundant in the fs?   */
 
   u32 bitmap_size,                    /* Number of bits set in bitmap     */
-      exec_cksum;                     /* Checksum of the execution trace  */
+      exec_cksum,                     /* Checksum of the execution trace  */
+      times_selected;                 /* times selected to be mutated */
 
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
-      depth,                          /* Path depth                       */
-      path_weight;                    /* Weight for path; the smaller, the better */
+      depth;                          /* Path depth                       */
+  double path_weight;                    /* Weight for path; the smaller, the better */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
@@ -800,6 +803,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->len          = len;
   q->depth        = cur_depth + 1;
   q->passed_det   = passed_det;
+  q->times_selected = 0;
+  q->path_weight  = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -1270,11 +1275,14 @@ static void update_bitmap_score(struct queue_entry* q) {
 
          /* Faster-executing or smaller test cases are favored. */
 
-         if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
-        //  if (q->path_weight > top_rated[i]->path_weight) continue; // choose a smaller weight
-        //  else if (q->path_weight == top_rated[i]->path_weight){
-        //    if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
-        //  }
+        //if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+        
+        if (R(100) < 30){ // give smaller-weight seeds a chance
+          if ((q->path_weight > top_rated[i]->path_weight) &&
+              (fav_factor > top_rated[i]->exec_us * top_rated[i]->len)) continue;
+        } else{
+          if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+        }
 
          /* Looks like we're going to win. Decrease ref count for the
             previous winner, discard its trace_bits[] if necessary. */
@@ -2679,10 +2687,11 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->handicap    = handicap;
   q->cal_failed  = 0;
 
-  q->path_weight = 0;
-  u64 *pwt = (u64*)(trace_bits + MAP_SIZE);
-  if ((*(pwt + 1)) != 0){
-    q->path_weight = (*pwt) / (*(pwt + 1));
+  
+  u32 *pwt = (u32 *)(trace_bits + MAP_SIZE);
+  u32 *pcnt = (u32 *)(trace_bits + MAP_SIZE + 4);
+  if ((*pcnt) != 0){
+    q->path_weight = ((float)(*pwt) / (*pcnt)) / (float)WEIGHT_FAC;
   }
 
   total_bitmap_size += q->bitmap_size;
@@ -4754,7 +4763,7 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_exec_us = total_cal_us / total_cal_cycles;
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
-
+  
   /* Adjust score based on execution speed of this path, compared to the
      global average. Multiplier ranges from 0.1x to 3x. Fast inputs are
      less expensive to fuzz, so we're giving them more air time. */
@@ -4807,6 +4816,13 @@ static u32 calculate_score(struct queue_entry* q) {
 
   }
 
+  /* burst-info factor */
+  q->times_selected ++;
+  double FACPOW = 32.0, BASEPOW = 0.6, BIAS = 0.03125; // 1/32
+  double expotn = q->path_weight + log(q->times_selected);
+  double burst_factor = FACPOW * pow(BASEPOW, expotn) + BIAS;
+
+  perf_score *= burst_factor;
   /* Make sure that we don't go over limit. */
 
   if (perf_score > HAVOC_MAX_MULT * 100) perf_score = HAVOC_MAX_MULT * 100;

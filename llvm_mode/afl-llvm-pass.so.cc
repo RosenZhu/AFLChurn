@@ -38,6 +38,7 @@
 //#include <string.h>
 #include <set>
 #include <map>
+#include <cmath>
 
 
 #include <stdio.h>
@@ -129,20 +130,20 @@ bool startsWith(std::string big_str, std::string small_str){
   One file is calculated only once.
   filename: relative path to file
 */
-bool calScore4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u64>> &all_scores){
+bool calScore4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &all_scores){
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
   git_commit *commit = NULL;
   time_t time, cur_time = std::time(0);
   unsigned int break_on_null_hunk, line;
-  u64 bb_score;
   char spec[1024] = {0};
   git_blob *blob;
   git_object *obj;
   const char *rawdata;
   git_object_size_t i, rawsize;
+  u32 lsc;
 
-  std::map<unsigned int, u64> line_score;
+  std::map<unsigned int, u32> line_score;
 
   if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
 
@@ -185,8 +186,9 @@ bool calScore4NewFile(git_repository *repo, const std::string &filename, std::ma
         break_on_null_hunk = 1;
         if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
           time  = git_commit_time(commit);
-          bb_score = (cur_time - time) / 86400; // days; the smaller, the more important
-          line_score[line] = bb_score;
+          lsc = (cur_time - time) / 86400; // days; the smaller, the more important
+          if (lsc == 0) line_score[line] = 0;
+          else line_score[line] = log(lsc) * WEIGHT_FAC; // base e
         }
       }
 
@@ -278,8 +280,8 @@ bool AFLCoverage::runOnModule(Module &M) {
   git_repository *repo = nullptr;
   int git_no_found = 1; // 0: found; otherwise, not found
 
-  // file name (absolute path): line NO. , score
-  std::map<std::string, std::map<unsigned int, u64>> map_scores;
+  // file name (relative path): line NO. , score
+  std::map<std::string, std::map<unsigned int, u32>> map_scores;
 
   for (auto &F : M){
     /* Get repository path and object */
@@ -337,7 +339,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      u64 bb_score = 0, ns = 0, ave_score = 0;
+      u32 bb_score = 0, ave_score = 0, ns = 0;
       
       std::string pdir("../");
    
@@ -395,10 +397,9 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       if (ns != 0){
         ave_score = bb_score / ns;
+        //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_score/WEIGHT_FAC << std::endl;
       } 
 
-      //std::cout << "block id: "<< cur_loc << ", bb score: " << ave_score << std::endl;
-      
       /* Load prev_loc */
 
       LoadInst *PrevLoc = IRB.CreateLoad(AFLPrevLoc);
@@ -429,15 +430,16 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       /* Add score */
       if (ns){ //only when score is assigned
-        IntegerType *LargestType = Int64Ty;
+        Type *LargestType = Int32Ty;
         Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
-        Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);
+        Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 4);
         Constant *Weight = ConstantInt::get(LargestType, ave_score);
         // add to shm, weight
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
         LoadInst *MapWt = IRB.CreateLoad(LargestType, MapWtPtr);
         MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
         Value *IncWt = IRB.CreateAdd(MapWt, Weight);
+        
         IRB.CreateStore(IncWt, MapWtPtr)
           ->setMetadata(NoSanMetaId, NoneMetaNode);
         // add to shm, block count
