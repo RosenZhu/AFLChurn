@@ -329,8 +329,8 @@
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
 
-/* Path weight. 4 bytes for weights, 4 bytes for block hit-counts */
-#define WEIGHT_SHM         8
+/* Path weight. 8 bytes for weights, 8 bytes for block hit-counts */
+#define WEIGHT_SHM         16
 
 #define WEIGHT_FAC         100
 

@@ -13,15 +13,6 @@ LLVM 7.0.1
 libgit2 v1.0.1
 
 ## Install
-in afl root dir
-
-    make clean all
-    cd llvm_mode
-    export LIBGIT_INC=/path/to/libgit2/include
-    export LIBGIT_LIB=/path/to/libgit2/lib
-    make clean all
-
-`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
 ### install libgit2
 install OpenSSL (see [troubleshooting](https://github.com/libgit2/libgit2/blob/master/docs/troubleshooting.md)).
@@ -39,6 +30,18 @@ envs:
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
     
+### install burst
+
+in afl root dir
+
+    make clean all
+    cd llvm_mode
+    export LIBGIT_INC=/path/to/libgit2/include
+    export LIBGIT_LIB=/path/to/libgit2/lib
+    make clean all
+
+`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
+
 
 ### about configure
 #### build outside the source directory

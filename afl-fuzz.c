@@ -91,7 +91,8 @@
 
 /********************    New Variables    *********************/
 
-
+double max_p_weight = 0.0,                /* max path weight of all seeds */
+       min_p_weight = 20.0;            /* minimun path weight of all seeds */
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -1275,14 +1276,15 @@ static void update_bitmap_score(struct queue_entry* q) {
 
          /* Faster-executing or smaller test cases are favored. */
 
-        //if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+        if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
         
-        if (R(100) < 30){ // give smaller-weight seeds a chance
-          if ((q->path_weight > top_rated[i]->path_weight) &&
-              (fav_factor > top_rated[i]->exec_us * top_rated[i]->len)) continue;
-        } else{
-          if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
-        }
+        // TODO:
+        // if (R(100) < 30){ // give smaller-weight seeds a chance
+        //   if ((q->path_weight > top_rated[i]->path_weight) &&
+        //       (fav_factor > top_rated[i]->exec_us * top_rated[i]->len)) continue;
+        // } else{
+        //   if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+        // }
 
          /* Looks like we're going to win. Decrease ref count for the
             previous winner, discard its trace_bits[] if necessary. */
@@ -2687,12 +2689,28 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->handicap    = handicap;
   q->cal_failed  = 0;
 
-  
+#ifdef __x86_64__
+
+  u64 *pwt = (u64 *)(trace_bits + MAP_SIZE);
+  u64 *pcnt = (u64 *)(trace_bits + MAP_SIZE + 8);
+  if ((*pcnt) != 0){
+    q->path_weight = ((double)(*pwt) / (*pcnt)) / (double)WEIGHT_FAC;
+  }
+
+#else
+
   u32 *pwt = (u32 *)(trace_bits + MAP_SIZE);
   u32 *pcnt = (u32 *)(trace_bits + MAP_SIZE + 4);
   if ((*pcnt) != 0){
-    q->path_weight = ((float)(*pwt) / (*pcnt)) / (float)WEIGHT_FAC;
+    q->path_weight = ((double)(*pwt) / (*pcnt)) / (double)WEIGHT_FAC;
   }
+
+#endif
+
+  //update max and min path weight for all seeds
+
+  if (max_p_weight < q->path_weight) max_p_weight = q->path_weight;
+  if (min_p_weight > q->path_weight) min_p_weight = q->path_weight;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
@@ -4818,11 +4836,17 @@ static u32 calculate_score(struct queue_entry* q) {
 
   /* burst-info factor */
   q->times_selected ++;
-  double FACPOW = 32.0, BASEPOW = 0.6, BIAS = 0.03125; // 1/32
-  double expotn = q->path_weight + log(q->times_selected);
-  double burst_factor = FACPOW * pow(BASEPOW, expotn) + BIAS;
+  double burst_factor, rela_p, score_pow;
+
+  if (max_p_weight == min_p_weight) burst_factor = 1;
+  else {
+    rela_p = 1 - (q->path_weight - min_p_weight)/(max_p_weight - min_p_weight);
+    score_pow = rela_p * (1 - pow(0.05, q->times_selected)) + 0.5 * pow(0.05, q->times_selected);
+    burst_factor = pow(2, 10 * (score_pow - 0.5));
+  }
 
   perf_score *= burst_factor;
+
   /* Make sure that we don't go over limit. */
 
   if (perf_score > HAVOC_MAX_MULT * 100) perf_score = HAVOC_MAX_MULT * 100;

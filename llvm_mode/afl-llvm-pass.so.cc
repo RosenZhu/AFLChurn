@@ -134,7 +134,7 @@ bool calScore4NewFile(git_repository *repo, const std::string &filename, std::ma
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
   git_commit *commit = NULL;
-  time_t time, cur_time = std::time(0);
+  time_t commit_time, cur_time = std::time(0);
   unsigned int break_on_null_hunk, line;
   char spec[1024] = {0};
   git_blob *blob;
@@ -185,10 +185,10 @@ bool calScore4NewFile(git_repository *repo, const std::string &filename, std::ma
       if (hunk){
         break_on_null_hunk = 1;
         if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
-          time  = git_commit_time(commit);
-          lsc = (cur_time - time) / 86400; // days; the smaller, the more important
+          commit_time  = git_commit_time(commit);
+          lsc = (cur_time - commit_time) / 86400; // days; the smaller, the more important
           if (lsc == 0) line_score[line] = 0;
-          else line_score[line] = log(lsc) * WEIGHT_FAC; // base e
+          else line_score[line] = (log(lsc) / log(2)) * WEIGHT_FAC; // base 2
         }
       }
 
@@ -393,11 +393,6 @@ bool AFLCoverage::runOnModule(Module &M) {
             }
           }
         }
-      }
-
-      if (ns != 0){
-        ave_score = bb_score / ns;
-        //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_score/WEIGHT_FAC << std::endl;
       } 
 
       /* Load prev_loc */
@@ -429,11 +424,20 @@ bool AFLCoverage::runOnModule(Module &M) {
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
       /* Add score */
-      if (ns){ //only when score is assigned
+      if (ns > 0){ //only when score is assigned
+        ave_score = bb_score / ns;
+        //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_score/WEIGHT_FAC << std::endl;
+#ifdef __x86_64__
+        Type *LargestType = Int64Ty;
+        Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
+        Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);
+        Constant *Weight = ConstantInt::get(LargestType, ave_score);
+#else
         Type *LargestType = Int32Ty;
         Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
         Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 4);
         Constant *Weight = ConstantInt::get(LargestType, ave_score);
+#endif
         // add to shm, weight
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
         LoadInst *MapWt = IRB.CreateLoad(LargestType, MapWtPtr);
