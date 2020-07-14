@@ -13,11 +13,6 @@ LLVM 7.0.1
 libgit2 v1.0.1
 
 ## Install
-in afl root dir
-
-    make clean all
-    cd llvm_mode
-    make clean all
 
 ### install libgit2
 install OpenSSL (see [troubleshooting](https://github.com/libgit2/libgit2/blob/master/docs/troubleshooting.md)).
@@ -34,24 +29,33 @@ install libgit2 [v1.0.1](https://github-production-release-asset-2e65be.s3.amazo
 envs:
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
+    
+### install burst
+
+in afl root dir
+
+    make clean all
+    cd llvm_mode
     export LIBGIT_INC=/path/to/libgit2/include
     export LIBGIT_LIB=/path/to/libgit2/lib
+    make clean all
 
 `LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
-#### compile target program
 
-    g++ prog.cpp -o gexp -I/path/to/libgit2/include  -L/path/to/libgit2/lib -lgit2
+### about configure
+#### build outside the source directory
+If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure
 
-    g++ gitexamp.cpp -o gexp -I/home/xgzhu/apps/libgit2/install/include  -L/home/xgzhu/apps/libgit2/install/lib -lgit2
+For example, if the path of the file "configure" is "/home/source/configure", and the build directory is "/home/mybuild/", then, 
 
-    -l:libgit2.so
-
-### If use configure to generate makefile, use absolute path to point configure
-
-For example, if the path of the file "configure" is "/home/source/configure", then,
-
+    cd /home/mybuild
     /home/source/configure [other parameters]
 
- 
+#### build inside the source directory
+Build as normal. Suppose the path of the file "configure" is "/home/source/configure", 
+
+    cd /home/source/
+    mkdir build && cd build
+    ../configure [other parameters]
 
