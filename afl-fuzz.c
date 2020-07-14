@@ -2689,7 +2689,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->handicap    = handicap;
   q->cal_failed  = 0;
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
 
   u64 *pwt = (u64 *)(trace_bits + MAP_SIZE);
   u64 *pcnt = (u64 *)(trace_bits + MAP_SIZE + 8);
@@ -4835,6 +4835,31 @@ static u32 calculate_score(struct queue_entry* q) {
   }
 
   /* burst-info factor */
+  /* 
+  Alternative way to calculate factor.
+    //////
+    // could also be a global variable that is updated in calibrate_case
+    double agg_weight = 0; 
+    size_t agg_count = 0;
+
+    struct queue_entry* t = queue;
+    while (t) {
+      agg_weight += t->p_weight;
+      agg_count++;
+      t = t->next;
+    }
+    //////
+
+    double avg_weight = agg_weight / agg_count;
+
+    if (q->path_weight       * 0.1 > avg_weight) perf_score /= 10;
+    else if (q->path_weight  * 0.25 > avg_weight) perf_score /= 4;
+    else if (q->path_weight  * 0.5 > avg_weight) perf_score /= 2;
+    else if (q->path_weight  * 0.75 > avg_weight) perf_score *= 0.75;
+    else if (q->path_weight  * 4 < avg_weight) perf_score *= 3;
+    else if (q->path_weight  * 3 < avg_weight) perf_score *= 2;
+    else if (q->path_weight  * 2 < avg_weight) perf_score *= 1.5;
+  */
   q->times_selected ++;
   double burst_factor, rela_p, score_pow;
 

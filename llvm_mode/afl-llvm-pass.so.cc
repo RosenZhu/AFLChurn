@@ -427,7 +427,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (ns > 0){ //only when score is assigned
         ave_score = bb_score / ns;
         //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_score/WEIGHT_FAC << std::endl;
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
         Type *LargestType = Int64Ty;
         Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
         Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);

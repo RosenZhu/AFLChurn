@@ -332,6 +332,7 @@
 /* Path weight. 8 bytes for weights, 8 bytes for block hit-counts */
 #define WEIGHT_SHM         16
 
+/* Keep decimal of path weight */
 #define WEIGHT_FAC         100
 
 /* Maximum allocator request size (keep well under INT_MAX): */
