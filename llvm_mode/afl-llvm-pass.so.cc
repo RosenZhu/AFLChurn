@@ -97,9 +97,6 @@ namespace {
       // StringRef getPassName() const override {
       //  return "American Fuzzy Lop Instrumentation";
       // }
-
-      // void setValueNonSan(Value *v);
-      // void setInsNonSan(Instruction *ins);
       
 
   };
@@ -109,28 +106,116 @@ namespace {
 
 char AFLCoverage::ID = 0;
 
-// void AFLCoverage::setValueNonSan(Value *v) {
-//   if (Instruction *ins = dyn_cast<Instruction>(v))
-//     setInsNonSan(ins);
-// }
-
-// void AFLCoverage::setInsNonSan(Instruction *ins) {
-//   if (ins)
-//     ins->setMetadata(NoSanMetaId, NoneMetaNode);
-// }
-
 
 bool startsWith(std::string big_str, std::string small_str){
   if (big_str.compare(0, small_str.length(), small_str) == 0) return true;
   else return false;
 }
 
+struct line_chns{
+    std::map<unsigned int, u32> num_changes;
+    std::map<unsigned int, u32> grand_parent_chns;
+};
+
+int grand_parent_lines_cb(const git_diff_delta *delta,
+	const git_diff_hunk *hunk,
+	const git_diff_line *line,
+	void *payload){
+    
+    struct line_chns* gp_chns = (struct line_chns *) payload;
+
+    if ((-1 == line->old_lineno) || (-1 == line->new_lineno)) return 0;
+    else {
+        gp_chns->grand_parent_chns[line->old_lineno] = line->new_lineno;
+    }
+    return 0;
+}
+
+int grand_orig_lines_cb(const git_diff_delta *delta,
+	const git_diff_hunk *hunk,
+	const git_diff_line *line,
+	void *payload){
+    
+    struct line_chns* go_chns = (struct line_chns *) payload;
+    if ((-1 == line->old_lineno) || (-1 == line->new_lineno)) return 0;
+    else {
+        // the same old_lineno changes in diff(grand, parent)
+        if (go_chns->grand_parent_chns.count(line->old_lineno)){ 
+            // new_lineno is the changed line in orig
+            if (go_chns->num_changes.count(line->new_lineno)) go_chns->num_changes[line->new_lineno] ++;
+            else go_chns->num_changes[line->new_lineno] = 1;
+        }
+    }
+
+    return 0;
+}
+
+/* The number of changes for lines */
+bool calChanges4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &all_chns_scores){
+  git_oid oid;
+  git_revwalk *walker = nullptr;
+  git_blob *parent_blob = NULL, *grand_blob = NULL;
+  git_blob *orig_blob = NULL;
+  char spec[1024] = {0};
+  git_object *obj;
+
+  
+  strcpy(spec, "HEAD");
+  strcat(spec, ":");
+  strcat(spec, filename.c_str());
+  if(git_revparse_single(&obj, repo, spec)) return false;
+  if(git_blob_lookup(&orig_blob, repo, git_object_id(obj))) return false;
+  if(obj) git_object_free(obj);
+
+  git_revwalk_new(&walker, repo);
+  git_revwalk_sorting(walker, GIT_SORT_TOPOLOGICAL | GIT_SORT_TIME);
+
+  if (git_revwalk_push_head(walker)) return false;
+  
+  struct line_chns line_changes;
+  
+  while (!git_revwalk_next(&oid, walker)){
+    memset(spec, 0, 1024);
+    if (git_oid_is_zero(&oid))
+        strcpy(spec, "HEAD");
+    else
+        git_oid_tostr(spec, sizeof(spec), &oid);
+    strcat(spec, ":");
+    strcat(spec, filename.c_str());
+
+    if(git_revparse_single(&obj, repo, spec)) break;
+
+    if(git_blob_lookup(&grand_blob, repo, git_object_id(obj))) break;
+
+    if (parent_blob) git_diff_blobs(grand_blob, NULL, parent_blob, NULL, NULL, NULL, NULL, NULL, grand_parent_lines_cb, &line_changes);
+    // update the number of changes
+    git_diff_blobs(grand_blob, NULL, orig_blob, NULL, NULL, NULL, NULL, NULL, grand_orig_lines_cb, &line_changes);
+
+    if (parent_blob) git_blob_free(parent_blob);
+    parent_blob = grand_blob;
+
+    // only needed for two neighbour commits
+    line_changes.grand_parent_chns.clear();
+
+    if(obj) git_object_free(obj);
+
+  }
+  
+  all_chns_scores[filename] = line_changes.num_changes;
+
+  if (obj) git_object_free(obj);
+  if (parent_blob) git_blob_free(parent_blob);
+  if (orig_blob) git_blob_free(orig_blob);
+
+  return true;
+}
+
 /*
   Calculate score for a new source file, which is just met.
   One file is calculated only once.
-  filename: relative path to file
+  filename: relative path to git repo
 */
-bool calScore4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &all_scores){
+bool calAges4NewFile(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &all_age_scores){
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
   git_commit *commit = NULL;
@@ -196,7 +281,7 @@ bool calScore4NewFile(git_repository *repo, const std::string &filename, std::ma
       line++;
     }
 
-    all_scores[filename] = line_score;
+    all_age_scores[filename] = line_score;
 
     if (blame)  git_blame_free(blame);
     if (commit) git_commit_free(commit);
@@ -281,7 +366,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   int git_no_found = 1; // 0: found; otherwise, not found
 
   // file name (relative path): line NO. , score
-  std::map<std::string, std::map<unsigned int, u32>> map_scores;
+  std::map<std::string, std::map<unsigned int, u32>> map_age_scores, map_changes_scores;
 
   for (auto &F : M){
     /* Get repository path and object */
@@ -307,7 +392,7 @@ bool AFLCoverage::runOnModule(Module &M) {
               git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
               
               if (!git_no_found){
-                if (git_repository_open(&repo, gitDir.ptr)) git_no_found = 1;
+                 git_no_found = git_repository_open(&repo, gitDir.ptr);
               }
 
               if (!git_no_found){
@@ -339,7 +424,8 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      u32 bb_score = 0, ave_score = 0, ns = 0;
+      u32 bb_age_score = 0, ave_age_score = 0, age_ns = 0;
+      u32 bb_chns_score = 0, ave_chns_score = 0, chns_ns = 0;
       
       std::string pdir("../");
    
@@ -380,14 +466,26 @@ bool AFLCoverage::runOnModule(Module &M) {
               bb_lines.insert(line);
               
               // the code file is not processed yet
-              if (!map_scores.count(filename)){
-                calScore4NewFile(repo, filename, map_scores);
+              if (!map_age_scores.count(filename)){
+                calAges4NewFile(repo, filename, map_age_scores);
               }
 
-              if (map_scores.count(filename)){
-                if (map_scores[filename].count(line)){
-                  bb_score += map_scores[filename][line];
-                  ns++;
+              if (map_age_scores.count(filename)){
+                if (map_age_scores[filename].count(line)){
+                  bb_age_score += map_age_scores[filename][line];
+                  age_ns++;
+                }
+              }
+
+              if (!map_changes_scores.count(filename)){
+                 /* the number of changes for lines */
+                calChanges4NewFile(repo, filename, map_changes_scores);
+              }
+
+              if (map_changes_scores.count(filename)){
+                if (map_changes_scores[filename].count(line)){
+                  bb_chns_score += map_changes_scores[filename][line];
+                  chns_ns ++;
                 }
               }
             }
@@ -395,6 +493,10 @@ bool AFLCoverage::runOnModule(Module &M) {
         }
       } 
 
+      if (chns_ns){
+        ave_chns_score = bb_chns_score / chns_ns;
+        std::cout << "num changes: "<< ave_chns_score << std::endl;
+      } 
       /* Load prev_loc */
 
       LoadInst *PrevLoc = IRB.CreateLoad(AFLPrevLoc);
@@ -424,19 +526,19 @@ bool AFLCoverage::runOnModule(Module &M) {
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
       /* Add score */
-      if (ns > 0){ //only when score is assigned
-        ave_score = bb_score / ns;
-        //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_score/WEIGHT_FAC << std::endl;
+      if (age_ns > 0){ //only when score is assigned
+        ave_age_score = bb_age_score / age_ns;
+        //std::cout << "block id: "<< cur_loc << ", bb score: " << (float)ave_age_score/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *LargestType = Int64Ty;
         Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
         Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 8);
-        Constant *Weight = ConstantInt::get(LargestType, ave_score);
+        Constant *Weight = ConstantInt::get(LargestType, ave_age_score);
 #else
         Type *LargestType = Int32Ty;
         Constant *MapWtLoc = ConstantInt::get(LargestType, MAP_SIZE);
         Constant *MapCntLoc = ConstantInt::get(LargestType, MAP_SIZE + 4);
-        Constant *Weight = ConstantInt::get(LargestType, ave_score);
+        Constant *Weight = ConstantInt::get(LargestType, ave_age_score);
 #endif
         // add to shm, weight
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapWtLoc);
@@ -479,9 +581,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   git_libgit2_shutdown();
 
   // release map
-  for (auto it = map_scores.begin(); it != map_scores.end(); ++it){
+  for (auto it = map_age_scores.begin(); it != map_age_scores.end(); ++it){
     it->second.clear();
-    map_scores.erase(it);
+    map_age_scores.erase(it);
   }
 
   return true;

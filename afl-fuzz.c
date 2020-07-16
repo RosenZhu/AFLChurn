@@ -92,7 +92,7 @@
 /********************    New Variables    *********************/
 
 double max_p_weight = 0.0,                /* max path weight of all seeds */
-       min_p_weight = 20.0;            /* minimun path weight of all seeds */
+       min_p_weight = 50.0;            /* minimun path weight of all seeds */
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -4860,6 +4860,7 @@ static u32 calculate_score(struct queue_entry* q) {
     else if (q->path_weight  * 3 < avg_weight) perf_score *= 2;
     else if (q->path_weight  * 2 < avg_weight) perf_score *= 1.5;
   */
+ 
   q->times_selected ++;
   double burst_factor, rela_p, score_pow;
 
