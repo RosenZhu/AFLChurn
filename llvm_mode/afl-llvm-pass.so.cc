@@ -580,7 +580,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       /* Add changes of lines */
       if (bb_burst_count > 0){ //only when change is assigned
         bb_burst_avg = bb_burst_total / bb_burst_count;
-        //std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
+        // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *ChangeLargestType = Int64Ty;
         Constant *MapChangeLoc = ConstantInt::get(ChangeLargestType, MAP_SIZE + 16);

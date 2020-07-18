@@ -91,8 +91,10 @@
 
 /********************    New Variables    *********************/
 
-double max_p_weight = 0.0,                /* max path weight of all seeds */
-       min_p_weight = 50.0;            /* minimun path weight of all seeds */
+double max_p_age = 0.0,                /* max path age among all seeds */
+       min_p_age = 50.0,               /* minimun path age among all seeds */
+       max_p_changes = 0.0,            /* max path changes among all seeds */
+       min_p_changes = 10000.0;          /* minimun path changes among all seeds */
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -264,7 +266,8 @@ struct queue_entry {
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
-  double path_weight;                    /* Weight for path; the smaller, the better */
+  double path_age,                    /* Age for path; the smaller, the better */
+         path_change;                 /* The number of changes for a path */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
@@ -805,7 +808,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->depth        = cur_depth + 1;
   q->passed_det   = passed_det;
   q->times_selected = 0;
-  q->path_weight  = 0.0;
+  q->path_age  = 0.0;
+  q->path_change  = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -1280,7 +1284,7 @@ static void update_bitmap_score(struct queue_entry* q) {
         
         // TODO:
         // if (R(100) < 30){ // give smaller-weight seeds a chance
-        //   if ((q->path_weight > top_rated[i]->path_weight) &&
+        //   if ((q->path_age > top_rated[i]->path_age) &&
         //       (fav_factor > top_rated[i]->exec_us * top_rated[i]->len)) continue;
         // } else{
         //   if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
@@ -2691,26 +2695,39 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
 #ifdef WORD_SIZE_64
 
-  u64 *pwt = (u64 *)(trace_bits + MAP_SIZE);
-  u64 *pcnt = (u64 *)(trace_bits + MAP_SIZE + 8);
-  if ((*pcnt) != 0){
-    q->path_weight = ((double)(*pwt) / (*pcnt)) / (double)WEIGHT_FAC;
+  u64 *pAgeWt = (u64 *)(trace_bits + MAP_SIZE);
+  u64 *pAgeCnt = (u64 *)(trace_bits + MAP_SIZE + 8);
+  if ((*pAgeCnt) != 0){
+    q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
   }
+
+  u64 *pChangeWt = (u64 *)(trace_bits + MAP_SIZE + 16);
+  u64 *pChangeCnt = (u64 *)(trace_bits + MAP_SIZE + 24);
+  if ((*pChangeCnt) != 0)
+      q->path_change = (double)(*pChangeWt) / (*pChangeCnt);
 
 #else
 
-  u32 *pwt = (u32 *)(trace_bits + MAP_SIZE);
-  u32 *pcnt = (u32 *)(trace_bits + MAP_SIZE + 4);
-  if ((*pcnt) != 0){
-    q->path_weight = ((double)(*pwt) / (*pcnt)) / (double)WEIGHT_FAC;
+  u32 *pAgeWt = (u32 *)(trace_bits + MAP_SIZE);
+  u32 *pAgeCnt = (u32 *)(trace_bits + MAP_SIZE + 4);
+  if ((*pAgeCnt) != 0){
+    q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
   }
+
+  u32 *pChangeWt = (u32 *)(trace_bits + MAP_SIZE + 8);
+  u32 *pChangeCnt = (u32 *)(trace_bits + MAP_SIZE + 12);
+  if ((*pChangeCnt) != 0)
+      q->path_change = (double)(*pChangeWt) / (*pChangeCnt);
 
 #endif
 
   //update max and min path weight for all seeds
 
-  if (max_p_weight < q->path_weight) max_p_weight = q->path_weight;
-  if (min_p_weight > q->path_weight) min_p_weight = q->path_weight;
+  if (max_p_age < q->path_age) max_p_age = q->path_age;
+  if (min_p_age > q->path_age) min_p_age = q->path_age;
+
+  if (max_p_changes < q->path_change) max_p_changes = q->path_change;
+  if (min_p_changes > q->path_change) min_p_changes = q->path_change;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
@@ -4852,23 +4869,29 @@ static u32 calculate_score(struct queue_entry* q) {
 
     double avg_weight = agg_weight / agg_count;
 
-    if (q->path_weight       * 0.1 > avg_weight) perf_score /= 10;
-    else if (q->path_weight  * 0.25 > avg_weight) perf_score /= 4;
-    else if (q->path_weight  * 0.5 > avg_weight) perf_score /= 2;
-    else if (q->path_weight  * 0.75 > avg_weight) perf_score *= 0.75;
-    else if (q->path_weight  * 4 < avg_weight) perf_score *= 3;
-    else if (q->path_weight  * 3 < avg_weight) perf_score *= 2;
-    else if (q->path_weight  * 2 < avg_weight) perf_score *= 1.5;
+    if (q->path_age       * 0.1 > avg_weight) perf_score /= 10;
+    else if (q->path_age  * 0.25 > avg_weight) perf_score /= 4;
+    else if (q->path_age  * 0.5 > avg_weight) perf_score /= 2;
+    else if (q->path_age  * 0.75 > avg_weight) perf_score *= 0.75;
+    else if (q->path_age  * 4 < avg_weight) perf_score *= 3;
+    else if (q->path_age  * 3 < avg_weight) perf_score *= 2;
+    else if (q->path_age  * 2 < avg_weight) perf_score *= 1.5;
   */
  
   q->times_selected ++;
-  double burst_factor, rela_p, score_pow;
+  double burst_factor, rela_p_age, rela_p_change, score_pow;
 
-  if (max_p_weight == min_p_weight) burst_factor = 1;
+  if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
   else {
-    rela_p = 1 - (q->path_weight - min_p_weight)/(max_p_weight - min_p_weight);
-    score_pow = rela_p * (1 - pow(0.05, q->times_selected)) + 0.5 * pow(0.05, q->times_selected);
-    burst_factor = pow(2, 10 * (score_pow - 0.5));
+    // the smaller age gets higher factor
+    if (max_p_age == min_p_age) rela_p_age = 0;
+    else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
+    // the higher change gets higher factor
+    if (min_p_changes == max_p_changes) rela_p_change = 0;
+    else rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
+    // score_pow: (0,2)
+    score_pow = (rela_p_age + rela_p_change) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+    burst_factor = pow(2, 5 * (score_pow - 1));
   }
 
   perf_score *= burst_factor;
