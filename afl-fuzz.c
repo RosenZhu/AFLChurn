@@ -266,8 +266,8 @@ struct queue_entry {
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
-  double path_age,                    /* Age for path; the smaller, the better */
-         path_change;                 /* The number of changes for a path */
+  double path_age,                    /* Average age of executed basic blocks. log2(days) */
+         path_change;                 /* Average number of changes of executed basic blocks */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */

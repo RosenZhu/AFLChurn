@@ -119,7 +119,7 @@ struct line_chns{
 };
 
 /* This is a callback for each different line in the comparison of two neighbour commits (sorted by time). */
-int grand_parent_lines_cb(const git_diff_delta *delta,
+int older_current_and_younger_neighbor_line_diff_callback(const git_diff_delta *delta,
 	const git_diff_hunk *hunk,
 	const git_diff_line *line,
 	void *payload){
@@ -136,7 +136,7 @@ int grand_parent_lines_cb(const git_diff_delta *delta,
 
 /* This is a callback for each different line in the comparison of the current oldest commit and the HEAD commit. 
 This tries to get the relationship between the changed line number and the line number in the HEAD commit. */
-int grand_orig_lines_cb(const git_diff_delta *delta,
+int older_current_and_head_line_diff_callback(const git_diff_delta *delta,
 	const git_diff_hunk *hunk,
 	const git_diff_line *line,
 	void *payload){
@@ -199,10 +199,10 @@ bool calculate_line_change_count(git_repository *repo, const std::string &filena
 
     if(git_blob_lookup(&older_current_blob, repo, git_object_id(obj))) break;
     // diff current commit to a younger commit
-    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, NULL, NULL, NULL, NULL, NULL, grand_parent_lines_cb, &line_changes);
+    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, NULL, NULL, NULL, NULL, NULL, older_current_and_younger_neighbor_line_diff_callback, &line_changes);
     if (!younger_neighbor_blob)  line_changes.first_diff = 0;
     // update the number of changes in head commit
-    git_diff_blobs(older_current_blob, NULL, head_blob, NULL, NULL, NULL, NULL, NULL, grand_orig_lines_cb, &line_changes);
+    git_diff_blobs(older_current_blob, NULL, head_blob, NULL, NULL, NULL, NULL, NULL, older_current_and_head_line_diff_callback, &line_changes);
 
     if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
     younger_neighbor_blob = older_current_blob;
