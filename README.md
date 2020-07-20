@@ -31,9 +31,16 @@ envs:
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
     
 ### install burst
+We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
+We can choose one of the schemes or both of them.
 
-in afl root dir
+- `export BURST_LINE_AGE=1` enables the age of lines.
 
+- `export BURST_LINE_CHANGE=1` enables the number of changes of lines.
+
+Install
+
+    cd /path/to/root/afl/dir
     make clean all
     cd llvm_mode
     export LIBGIT_INC=/path/to/libgit2/include
@@ -43,19 +50,23 @@ in afl root dir
 `LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
 
-### about configure
-#### build outside the source directory
+### About configure
+#### Build outside the source directory
 If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure
 
 For example, if the path of the file "configure" is "/home/source/configure", and the build directory is "/home/mybuild/", then, 
 
     cd /home/mybuild
+    export BURST_LINE_AGE=1
+    export BURST_LINE_CHANGE=1
     /home/source/configure [other parameters]
 
-#### build inside the source directory
+#### Build inside the source directory
 Build as normal. Suppose the path of the file "configure" is "/home/source/configure", 
 
     cd /home/source/
     mkdir build && cd build
+    export BURST_LINE_AGE=1
+    export BURST_LINE_CHANGE=1
     ../configure [other parameters]
 
