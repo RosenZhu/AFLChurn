@@ -95,6 +95,8 @@ double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_age = 50.0,               /* minimun path age among all seeds */
        max_p_changes = 0.0,            /* max path changes among all seeds */
        min_p_changes = 10000.0;          /* minimun path changes among all seeds */
+
+double show_factor = 0.0;
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -4290,10 +4292,14 @@ static void show_stats(void) {
 
   }
 
-  sprintf(tmp, "%s (%s%s unique)", DI(total_tmouts), DI(unique_tmouts),
-          (unique_hangs >= KEEP_UNIQUE_HANG) ? "+" : "");
+  // sprintf(tmp, "%s (%s%s unique)", DI(total_tmouts), DI(unique_tmouts),
+  //         (unique_hangs >= KEEP_UNIQUE_HANG) ? "+" : "");
 
-  SAYF (bSTG bV bSTOP "  total tmouts : " cRST "%-22s " bSTG bV "\n", tmp);
+  // SAYF (bSTG bV bSTOP "  total tmouts : " cRST "%-22s " bSTG bV "\n", tmp);
+
+  sprintf(tmp, "%.3f", show_factor);
+
+  SAYF (bSTG bV bSTOP "  burst factor : " cRST "%-22s " bSTG bV "\n", tmp);
 
   /* Aaaalmost there... hold on! */
 
@@ -4893,6 +4899,8 @@ static u32 calculate_score(struct queue_entry* q) {
     score_pow = (rela_p_age + rela_p_change) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
     burst_factor = pow(2, 5 * (score_pow - 1));
   }
+
+  show_factor = burst_factor;
 
   perf_score *= burst_factor;
 

@@ -60,6 +60,7 @@ For example, if the path of the file "configure" is "/home/source/configure", an
     export BURST_LINE_AGE=1
     export BURST_LINE_CHANGE=1
     /home/source/configure [other parameters]
+    CC=/path/to/burstfuzz/afl-clang-fast make
 
 #### Build inside the source directory
 Build as normal. Suppose the path of the file "configure" is "/home/source/configure", 
@@ -69,4 +70,4 @@ Build as normal. Suppose the path of the file "configure" is "/home/source/confi
     export BURST_LINE_AGE=1
     export BURST_LINE_CHANGE=1
     ../configure [other parameters]
-
+    CC=/path/to/burstfuzz/afl-clang-fast make
