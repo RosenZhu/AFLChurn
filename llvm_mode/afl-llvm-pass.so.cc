@@ -340,7 +340,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   if (isatty(2) && !getenv("AFL_QUIET")) {
 
-    SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST " by <lszekeres@google.com>\n");
+    SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST " by <burstfuzz>\n");
 
   } else be_quiet = 1;
 
@@ -376,7 +376,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   /* Instrument all the things! */
   git_libgit2_init();
 
-  int inst_blocks = 0;
+  int inst_blocks = 0, inst_ages = 0, inst_changes = 0;
 
   std::set<unsigned int> bb_lines;
   unsigned int line;
@@ -548,6 +548,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       /* Add age of lines */
       if (bb_age_count > 0){ //only when age is assigned
         bb_age_avg = bb_age_total / bb_age_count;
+        inst_ages ++;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
@@ -580,6 +581,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       /* Add changes of lines */
       if (bb_burst_count > 0){ //only when change is assigned
         bb_burst_avg = bb_burst_total / bb_burst_count;
+        inst_changes++;
         // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *ChangeLargestType = Int64Ty;
@@ -624,8 +626,8 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    if (use_line_age) OKF("Use line ages.");
-    if (use_line_change) OKF("Use line changes.");
+    if (use_line_age) OKF("Use line ages. Instrumented %u ages.", inst_ages);
+    if (use_line_change) OKF("Use line changes. Instrumented %u changes.", inst_changes);
 
   }
 
@@ -635,10 +637,10 @@ bool AFLCoverage::runOnModule(Module &M) {
   git_libgit2_shutdown();
 
   // release map
-  for (auto it = map_age_scores.begin(); it != map_age_scores.end(); ++it){
-    it->second.clear();
-    map_age_scores.erase(it);
-  }
+  // for (auto it = map_age_scores.begin(); it != map_age_scores.end(); ++it){
+  //   it->second.clear();
+  //   map_age_scores.erase(it);
+  // }
 
   return true;
 
