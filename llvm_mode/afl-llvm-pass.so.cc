@@ -337,24 +337,24 @@ bool get_clean_relative_path(std::string &filename, std::string filedir, std::st
   std::string parentdir("../"), currentdir("./");
 
   // /path/to/configure: filename = /path/to/file.c
-  // remove current string of git_path from filename
+  // remove substring, which is the same as git_path, from filename
   if (startsWith(filename, "/")){
     filename.erase(0, git_path.length());  // relative path
   } else {
     // remove paths outside project dir
     // e.g., filedir: /root/project/src; git_path: /root/project/
-    // append filename to file dir
+    // append filename to filedir
     filedir.append("/");
     filedir.append(filename);
-    filedir.erase(0, git_path.length());
     filename = filedir;
     
-    // now, filename may be src/file.c, build/../src/file.c, or src/./file.c
+    // now, filename may be /root/project/src/file.c, /root/project/build/../src/file.c, or /root/project/src/./file.c
     std::size_t pos_dot_dot, pos_dot, pos_pre;
-    // "../"
+    // remove "../" and the relate neighbour directory
     pos_dot_dot = filename.find(parentdir);
     while (pos_dot_dot != std::string::npos){
-      if (pos_dot_dot == 0) return false; //out of project dir
+      
+      if (pos_dot_dot == 0 || pos_dot_dot == 1) return false; //out of project dir
 
       pos_pre = filename.rfind("/", pos_dot_dot - 2);
       if (pos_pre == std::string::npos){
@@ -366,7 +366,7 @@ bool get_clean_relative_path(std::string &filename, std::string filedir, std::st
       pos_dot_dot = filename.find(parentdir);
     }
 
-    // "./"
+    // remove "./"
     pos_dot = filename.find(currentdir);
     while (pos_dot != std::string::npos){
       filename.erase(pos_dot, currentdir.length());
@@ -374,7 +374,8 @@ bool get_clean_relative_path(std::string &filename, std::string filedir, std::st
       pos_dot = filename.find(currentdir);
     }
 
-
+    // relative path
+    filename.erase(0, git_path.length());
   }
 
   return true;
