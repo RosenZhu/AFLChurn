@@ -51,6 +51,7 @@ Install
 
 
 ### About configure
+
 #### Build outside the source directory
 If use configure to generate makefile, and the build directory is not in the source code directory, use absolute path to point configure
 
@@ -59,8 +60,8 @@ For example, if the path of the file "configure" is "/home/source/configure", an
     cd /home/mybuild
     export BURST_LINE_AGE=1
     export BURST_LINE_CHANGE=1
-    /home/source/configure [other parameters]
-    CC=/path/to/burstfuzz/afl-clang-fast make
+    CC=/path/to/burstfuzz/afl-clang-fast /home/source/configure [...options...]
+    make
 
 #### Build inside the source directory
 Build as normal. Suppose the path of the file "configure" is "/home/source/configure", 
@@ -69,5 +70,14 @@ Build as normal. Suppose the path of the file "configure" is "/home/source/confi
     mkdir build && cd build
     export BURST_LINE_AGE=1
     export BURST_LINE_CHANGE=1
-    ../configure [other parameters]
-    CC=/path/to/burstfuzz/afl-clang-fast make
+    CC=/path/to/burstfuzz/afl-clang-fast ../configure [...options...]
+    make
+
+Or
+
+    cd /home/source/
+    export BURST_LINE_AGE=1
+    export BURST_LINE_CHANGE=1
+    CC=/path/to/burstfuzz/afl-clang-fast ./configure [...options...]
+    make
+    

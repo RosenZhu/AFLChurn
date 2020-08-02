@@ -4900,6 +4900,28 @@ static u32 calculate_score(struct queue_entry* q) {
     burst_factor = pow(2, 5 * (score_pow - 1));
   }
 
+  // double age_factor, age_pow, change_factor, change_pow;
+  // if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+  // else {
+  //   // the smaller age gets higher factor
+  //   if (max_p_age == min_p_age) age_factor = 0;
+  //   else{
+  //     rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
+  //     age_pow = rela_p_age * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+  //     // age_factor: (1/32, 32)
+  //     age_factor = pow(2, 10 * (age_pow - 0.5));
+  //   } 
+  //   // the higher change gets higher factor
+  //   if (min_p_changes == max_p_changes) change_factor = 0;
+  //   else{
+  //     rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
+  //     change_pow = rela_p_change * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+  //     // change_factor: (1/32, 32)
+  //     change_factor = pow(2, 10 * (change_pow - 0.5));
+  //   } 
+  //   burst_factor = age_factor + change_factor;
+  // }
+
   show_factor = burst_factor;
 
   perf_score *= burst_factor;
