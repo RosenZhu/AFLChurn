@@ -161,7 +161,8 @@ int older_current_and_head_line_diff_callback(const git_diff_delta *delta,
 /* The number of changes for lines.
  Caution: git_object_free(obj) may or may not free the "obj".
  */
-bool calculate_line_change_count(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &file2line2changes_map){
+bool calculate_line_change_count(git_repository *repo, const std::string &filename, 
+                    std::map<std::string, std::map<unsigned int, u32>> &file2line2changes_map){
   git_oid oid;
   git_revwalk *walker = nullptr;
   git_blob *younger_neighbor_blob = NULL, *older_current_blob = NULL;
@@ -184,11 +185,13 @@ bool calculate_line_change_count(git_repository *repo, const std::string &filena
   if(git_revwalk_new(&walker, repo)) return false;
   // the commits are sorted by time, newest to oldest
   if (git_revwalk_sorting(walker, GIT_SORT_TOPOLOGICAL | GIT_SORT_TIME)){
+    git_blob_free(head_blob);
     git_revwalk_free(walker);
     return false;
   }
   // push the head commit to the walker
   if (git_revwalk_push_head(walker)){
+    git_blob_free(head_blob);
     git_revwalk_free(walker);
     return false;
   }
@@ -217,10 +220,14 @@ bool calculate_line_change_count(git_repository *repo, const std::string &filena
     git_object_free(obj);
    
     // diff current commit to a younger commit
-    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, NULL, NULL, NULL, NULL, NULL, older_current_and_younger_neighbor_line_diff_callback, &line_changes);
+    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
+                                                NULL, NULL, NULL, NULL, NULL, 
+                                                older_current_and_younger_neighbor_line_diff_callback, &line_changes);
     if (!younger_neighbor_blob)  line_changes.first_diff = 0;
     // update the number of changes in head commit
-    git_diff_blobs(older_current_blob, NULL, head_blob, NULL, NULL, NULL, NULL, NULL, older_current_and_head_line_diff_callback, &line_changes);
+    git_diff_blobs(older_current_blob, NULL, head_blob, 
+                    NULL, NULL, NULL, NULL, NULL, 
+                    older_current_and_head_line_diff_callback, &line_changes);
 
     if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
     younger_neighbor_blob = older_current_blob;
@@ -247,7 +254,8 @@ bool calculate_line_change_count(git_repository *repo, const std::string &filena
   One file is calculated only once.
   filename: relative path to git repo
 */
-bool calculate_line_age(git_repository *repo, const std::string &filename, std::map<std::string, std::map<unsigned int, u32>> &file2line2age_map){
+bool calculate_line_age(git_repository *repo, const std::string &filename, 
+                        std::map<std::string, std::map<unsigned int, u32>> &file2line2age_map){
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
   git_commit *commit = NULL;
@@ -258,7 +266,7 @@ bool calculate_line_age(git_repository *repo, const std::string &filename, std::
   git_object *obj;
   const char *rawdata;
   git_object_size_t i, rawsize;
-  u32 lsc;
+  u32 days_since_last_change;
 
   std::map<unsigned int, u32> line_score;
 
@@ -304,11 +312,14 @@ bool calculate_line_age(git_repository *repo, const std::string &filename, std::
         break_on_null_hunk = 1;
         if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
           commit_time  = git_commit_time(commit);
-          lsc = (cur_time - commit_time) / 86400; // days; the smaller, the more important
-          if (lsc == 0) line_score[line] = 0;
-          else line_score[line] = (log(lsc) / log(2)) * WEIGHT_FAC; // base 2
+          days_since_last_change = (cur_time - commit_time) / 86400; // days; the smaller, the more important
+          /* Use log2() to reduce the effect of large days. 
+            Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
+          if (days_since_last_change == 0) line_score[line] = 0;
+          else line_score[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
           git_commit_free(commit);
         }
+        
       }
 
       i = (int)(eol - rawdata + 1);
@@ -322,65 +333,54 @@ bool calculate_line_age(git_repository *repo, const std::string &filename, std::
     git_blob_free(blob);
 
     return true;
-  } else {
-    
-    return false;
   }
+    
+  return false;
+  
   
 }
 
 
-/* Realative path to repo dir.
-  Without "." or ".." in the path because libgit2 will have error.
+/* Change the filename to relative path (relative to souce dir) without "../" or "./" in the path.
+Input:
+  relative_file_path: relative path of source files
+  base_directory: absolute path of directories in building directory
+  git_directory: absolute path of git repo directory (root of source code)
+Output:
+  clean relative path of a file
  */
-bool get_clean_relative_path(std::string &filename, std::string filedir, std::string git_path){
-  std::string parentdir("../"), currentdir("./");
+std::string get_file_path_relative_to_git_dir(std::string relative_file_path, 
+                    std::string base_directory, std::string git_directory){
 
-  // /path/to/configure: filename = /path/to/file.c
-  // remove substring, which is the same as git_path, from filename
-  if (startsWith(filename, "/")){
-    filename.erase(0, git_path.length());  // relative path
-  } else {
-    // remove paths outside project dir
-    // e.g., filedir: /root/project/src; git_path: /root/project/
-    // append filename to filedir
-    filedir.append("/");
-    filedir.append(filename);
-    filename = filedir;
-    
-    // now, filename may be /root/project/src/file.c, /root/project/build/../src/file.c, or /root/project/src/./file.c
-    std::size_t pos_dot_dot, pos_dot, pos_pre;
-    // remove "../" and the relate neighbour directory
-    pos_dot_dot = filename.find(parentdir);
-    while (pos_dot_dot != std::string::npos){
-      
-      if (pos_dot_dot == 0 || pos_dot_dot == 1) return false; //out of project dir
+    std::string clean_relative_path;
 
-      pos_pre = filename.rfind("/", pos_dot_dot - 2);
-      if (pos_pre == std::string::npos){
-        filename.erase(0, pos_dot_dot + parentdir.length());
-      } else {
-        filename.erase(pos_pre + 1, parentdir.length() + pos_dot_dot - pos_pre - 1);
-      }
+  
+  if (startsWith(relative_file_path, "/")){
+    // "/path/to/configure": relative_file_path = /path/to/file.c
+    // remove substring, which is the same as git_directory, from relative_file_path
+    relative_file_path.erase(0, git_directory.length());  // relative path
+    clean_relative_path = relative_file_path;
+  } else{
+    // "../configure" or "./configure"
+    // relative_file_path could be src/file.c, build/../src/file.c, or src/./file.c
+    // relative_file_path is relative to base_directory here
+    base_directory.append("/");
+    base_directory.append(relative_file_path);
+    // remove "../" or "./"
+    char* resolved_path = realpath(base_directory.c_str(), NULL);
 
-      pos_dot_dot = filename.find(parentdir);
-    }
+    clean_relative_path.append(resolved_path);
 
-    // remove "./"
-    pos_dot = filename.find(currentdir);
-    while (pos_dot != std::string::npos){
-      filename.erase(pos_dot, currentdir.length());
+    free(resolved_path);
 
-      pos_dot = filename.find(currentdir);
-    }
-
-    // relative path
-    filename.erase(0, git_path.length());
+    clean_relative_path.erase(0, git_directory.length());  // relative path
   }
 
-  return true;
+  return clean_relative_path;
 
 }
+
+
 
 bool AFLCoverage::runOnModule(Module &M) {
 
@@ -486,18 +486,27 @@ bool AFLCoverage::runOnModule(Module &M) {
               
               if (!git_no_found){
                 git_no_found = git_repository_open(&repo, gitDir.ptr);
-                /* if only one commit, don't calculate age or change */
+                /* If the entire commit history contains only one commit, it may be a third-party library. 
+                      Don't calculate age or change */
                 if (!git_no_found){
                   git_revwalk * walker = nullptr;
-                  git_revwalk_new(&walker, repo);
-                  git_revwalk_sorting(walker, GIT_SORT_NONE);
+                  if (git_revwalk_new(&walker, repo)){
+                    git_no_found = 1;
+                    continue;
+                  }
+
+                  if (git_revwalk_sorting(walker, GIT_SORT_NONE)){
+                    git_revwalk_free(walker);
+                    git_no_found = 1;
+                    continue;
+                  }
 
                   if (!git_revwalk_push_head(walker)){
                     git_oid oid;
                     int count_cmts = 0;
                     while(!git_revwalk_next(&oid, walker)){
                       count_cmts++;
-                      if (count_cmts > 2) break;
+                      break;
                     }
 
                     if (!count_cmts){
@@ -511,7 +520,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     git_no_found = 1;
                   }
 
-                  if (walker) git_revwalk_free(walker);
+                  git_revwalk_free(walker);
                 }
 
               }
@@ -548,7 +557,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       u32 bb_age_total = 0, bb_age_avg = 0, bb_age_count = 0;
       u32 bb_burst_total = 0, bb_burst_avg = 0, bb_burst_count = 0;
       
-      std::string parentdir("../"), curdir("./");
+      //std::string pdir("../"), curdir("./");
    
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -557,7 +566,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       for (auto &I: BB){
   
         line = 0;
-        std::string filename, filedir;
+        std::string filename, filedir, clean_relative_path;
         /* Connect targets with instructions */
         DILocation *Loc = I.getDebugLoc().get(); 
         if (Loc && !git_no_found){
@@ -575,42 +584,41 @@ bool AFLCoverage::runOnModule(Module &M) {
 
           /* take care of git blame path: relative to repo dir */
           if (!filename.empty() && !filedir.empty()){
-            // std::cout << "file name: " << filename << std::endl << "file dir: " << filedir <<std::endl;
-            if (get_clean_relative_path(filename, filedir, git_path)){
-              // std::cout << "file name after: " << filename << std::endl;
-              /* calculate score of a block */
-              if (!bb_lines.count(line)){
-                bb_lines.insert(line);
-                
-                // calculate line age
-                if (use_line_age) {
-                  if (!map_age_scores.count(filename)){
-                    calculate_line_age(repo, filename, map_age_scores);
-                  }
-
-                  if (map_age_scores.count(filename)){
-                    if (map_age_scores[filename].count(line)){
-                      bb_age_total += map_age_scores[filename][line];
-                      bb_age_count++;
-                    }
-                  }
-                }
-                // calculate line change
-                if (use_line_change){
-                  if (!map_bursts_scores.count(filename)){
-                    /* the number of changes for lines */
-                    calculate_line_change_count(repo, filename, map_bursts_scores);
-                  }
-
-                  if (map_bursts_scores.count(filename)){
-                    if (map_bursts_scores[filename].count(line)){
-                      bb_burst_total += map_bursts_scores[filename][line];
-                      bb_burst_count ++;
-                    }
-                  }
-                }
+            //std::cout << "file name: " << filename << std::endl << "file dir: " << filedir <<std::endl;
+            clean_relative_path = get_file_path_relative_to_git_dir(filename, filedir, git_path);
+            //std::cout << "relative path: " << clean_relative_path << std::endl;
+            /* calculate score of a block */
+            if (!bb_lines.count(line)){
+              bb_lines.insert(line);
               
+              // calculate line age
+              if (use_line_age) {
+                if (!map_age_scores.count(clean_relative_path)){
+                  calculate_line_age(repo, clean_relative_path, map_age_scores);
+                }
+
+                if (map_age_scores.count(clean_relative_path)){
+                  if (map_age_scores[clean_relative_path].count(line)){
+                    bb_age_total += map_age_scores[clean_relative_path][line];
+                    bb_age_count++;
+                  }
+                }
               }
+              // calculate line change
+              if (use_line_change){
+                if (!map_bursts_scores.count(clean_relative_path)){
+                  /* the number of changes for lines */
+                  calculate_line_change_count(repo, clean_relative_path, map_bursts_scores);
+                }
+
+                if (map_bursts_scores.count(clean_relative_path)){
+                  if (map_bursts_scores[clean_relative_path].count(line)){
+                    bb_burst_total += map_bursts_scores[clean_relative_path][line];
+                    bb_burst_count ++;
+                  }
+                }
+              }
+            
             }
 
           }
