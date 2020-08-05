@@ -103,6 +103,7 @@ namespace {
 
 }
 
+const std::string NOT_A_PATH = "not_a_path";
 
 char AFLCoverage::ID = 0;
 
@@ -161,7 +162,7 @@ int older_current_and_head_line_diff_callback(const git_diff_delta *delta,
 /* The number of changes for lines.
  Caution: git_object_free(obj) may or may not free the "obj".
  */
-bool calculate_line_change_count(git_repository *repo, const std::string &filename, 
+bool calculate_line_change_count(git_repository *repo, const std::string filename, 
                     std::map<std::string, std::map<unsigned int, u32>> &file2line2changes_map){
   git_oid oid;
   git_revwalk *walker = nullptr;
@@ -254,7 +255,7 @@ bool calculate_line_change_count(git_repository *repo, const std::string &filena
   One file is calculated only once.
   filename: relative path to git repo
 */
-bool calculate_line_age(git_repository *repo, const std::string &filename, 
+bool calculate_line_age(git_repository *repo, const std::string filename, 
                         std::map<std::string, std::map<unsigned int, u32>> &file2line2age_map){
   git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
   git_blame *blame = NULL;
@@ -343,7 +344,7 @@ bool calculate_line_age(git_repository *repo, const std::string &filename,
 
 /* Change the filename to relative path (relative to souce dir) without "../" or "./" in the path.
 Input:
-  relative_file_path: relative path of source files
+  relative_file_path: relative path of source files, relative to base_directory
   base_directory: absolute path of directories in building directory
   git_directory: absolute path of git repo directory (root of source code)
 Output:
@@ -368,12 +369,15 @@ std::string get_file_path_relative_to_git_dir(std::string relative_file_path,
     base_directory.append(relative_file_path);
     // remove "../" or "./"
     char* resolved_path = realpath(base_directory.c_str(), NULL);
+    //TODO: why is it NULL?
+    if (resolved_path == NULL) clean_relative_path = NOT_A_PATH;
+    else{
+      clean_relative_path.append(resolved_path);
 
-    clean_relative_path.append(resolved_path);
+      free(resolved_path);
 
-    free(resolved_path);
-
-    clean_relative_path.erase(0, git_directory.length());  // relative path
+      clean_relative_path.erase(0, git_directory.length());  // relative path
+    }  
   }
 
   return clean_relative_path;
@@ -587,39 +591,42 @@ bool AFLCoverage::runOnModule(Module &M) {
             //std::cout << "file name: " << filename << std::endl << "file dir: " << filedir <<std::endl;
             clean_relative_path = get_file_path_relative_to_git_dir(filename, filedir, git_path);
             //std::cout << "relative path: " << clean_relative_path << std::endl;
-            /* calculate score of a block */
-            if (!bb_lines.count(line)){
-              bb_lines.insert(line);
+            if (clean_relative_path.compare(NOT_A_PATH) != 0){
+                /* calculate score of a block */
+              if (!bb_lines.count(line)){
+                bb_lines.insert(line);
+                
+                // calculate line age
+                if (use_line_age) {
+                  if (!map_age_scores.count(clean_relative_path)){
+                    calculate_line_age(repo, clean_relative_path, map_age_scores);
+                  }
+
+                  if (map_age_scores.count(clean_relative_path)){
+                    if (map_age_scores[clean_relative_path].count(line)){
+                      bb_age_total += map_age_scores[clean_relative_path][line];
+                      bb_age_count++;
+                    }
+                  }
+                }
+                // calculate line change
+                if (use_line_change){
+                  if (!map_bursts_scores.count(clean_relative_path)){
+                    /* the number of changes for lines */
+                    calculate_line_change_count(repo, clean_relative_path, map_bursts_scores);
+                  }
+
+                  if (map_bursts_scores.count(clean_relative_path)){
+                    if (map_bursts_scores[clean_relative_path].count(line)){
+                      bb_burst_total += map_bursts_scores[clean_relative_path][line];
+                      bb_burst_count ++;
+                    }
+                  }
+                }
               
-              // calculate line age
-              if (use_line_age) {
-                if (!map_age_scores.count(clean_relative_path)){
-                  calculate_line_age(repo, clean_relative_path, map_age_scores);
-                }
-
-                if (map_age_scores.count(clean_relative_path)){
-                  if (map_age_scores[clean_relative_path].count(line)){
-                    bb_age_total += map_age_scores[clean_relative_path][line];
-                    bb_age_count++;
-                  }
-                }
               }
-              // calculate line change
-              if (use_line_change){
-                if (!map_bursts_scores.count(clean_relative_path)){
-                  /* the number of changes for lines */
-                  calculate_line_change_count(repo, clean_relative_path, map_bursts_scores);
-                }
-
-                if (map_bursts_scores.count(clean_relative_path)){
-                  if (map_bursts_scores[clean_relative_path].count(line)){
-                    bb_burst_total += map_bursts_scores[clean_relative_path][line];
-                    bb_burst_count ++;
-                  }
-                }
-              }
-            
             }
+          
 
           }
         }
