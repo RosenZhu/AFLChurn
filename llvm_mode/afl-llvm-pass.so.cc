@@ -103,7 +103,6 @@ namespace {
 
 }
 
-const std::string NOT_A_PATH = "not_a_path";
 
 char AFLCoverage::ID = 0;
 
@@ -370,7 +369,7 @@ std::string get_file_path_relative_to_git_dir(std::string relative_file_path,
     // remove "../" or "./"
     char* resolved_path = realpath(base_directory.c_str(), NULL);
     //TODO: why is it NULL?
-    if (resolved_path == NULL) clean_relative_path = NOT_A_PATH;
+    if (resolved_path == NULL) clean_relative_path = "";
     else{
       clean_relative_path.append(resolved_path);
 
@@ -588,10 +587,10 @@ bool AFLCoverage::runOnModule(Module &M) {
 
           /* take care of git blame path: relative to repo dir */
           if (!filename.empty() && !filedir.empty()){
-            //std::cout << "file name: " << filename << std::endl << "file dir: " << filedir <<std::endl;
+            // std::cout << "file name: " << filename << std::endl << "file dir: " << filedir <<std::endl;
             clean_relative_path = get_file_path_relative_to_git_dir(filename, filedir, git_path);
-            //std::cout << "relative path: " << clean_relative_path << std::endl;
-            if (clean_relative_path.compare(NOT_A_PATH) != 0){
+            // std::cout << "relative path: " << clean_relative_path << std::endl;
+            if (!clean_relative_path.empty()){
                 /* calculate score of a block */
               if (!bb_lines.count(line)){
                 bb_lines.insert(line);
