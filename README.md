@@ -34,9 +34,11 @@ envs:
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
 
-- `export BURST_LINE_AGE=1` enables the age of lines.
+- `export BURST_LINE_AGE=1` enables the age of lines using libgit2.
+- `export BURST_COMMAND_AGE=1` enables the age of lines using git command.
 
-- `export BURST_LINE_CHANGE=1` enables the number of changes of lines.
+- `export BURST_LINE_CHANGE=1` enables the number of changes of lines using libgit2.
+- `export BURST_COMMAND_CHANGE=1` enables the number of changes of lines using git command.
 
 Install
 

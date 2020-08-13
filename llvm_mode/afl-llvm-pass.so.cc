@@ -44,6 +44,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <libgen.h>         // dirname
+#include <linux/limits.h>   // PATH_MAX
 
 #include <iostream>
 #include <fstream>
@@ -169,6 +171,7 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
   git_blob *head_blob = NULL;
   char spec[1024] = {0};
   git_object *obj = NULL;
+  int count_commits = 0;
 
   // get the file contents (blob) in head commit
   strcpy(spec, "HEAD");
@@ -201,6 +204,7 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
   
   // if only one commit, the "next" commit is NULL
   while (!git_revwalk_next(&oid, walker)){
+    
     // get file blob in current commit
     memset(spec, 0, 1024);
     if (git_oid_is_zero(&oid))
@@ -219,22 +223,25 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
 
     git_object_free(obj);
    
-    // diff current commit to a younger commit
-    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
+    // diff current commit to a younger commit; younger_neighbor_blob does not exist in the first diff
+    if (line_changes.first_diff == 0) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
                                                 NULL, NULL, NULL, NULL, NULL, 
                                                 older_current_and_younger_neighbor_line_diff_callback, &line_changes);
-    if (!younger_neighbor_blob)  line_changes.first_diff = 0;
+    
     // update the number of changes in head commit
     git_diff_blobs(older_current_blob, NULL, head_blob, 
                     NULL, NULL, NULL, NULL, NULL, 
                     older_current_and_head_line_diff_callback, &line_changes);
 
-    if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
+    if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
     younger_neighbor_blob = older_current_blob;
 
+    if (line_changes.first_diff == 1)  line_changes.first_diff = 0;
     // only needed for two neighbour commits
     line_changes.old_changed_lines.clear();
     
+    count_commits++;
+    if (count_commits > 100) break;
 
   }
 
@@ -243,7 +250,7 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
   if (!line_changes.line2changes_map.empty())
       file2line2changes_map[filename] = line_changes.line2changes_map;
 
-  if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
+  if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
   git_blob_free(head_blob);
 
   return true;
@@ -268,10 +275,10 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
   git_object_size_t i, rawsize;
   u32 days_since_last_change;
 
-  std::map<unsigned int, u32> line_score;
+  std::map<unsigned int, u32> line_age_days;
 
 
-  if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
+  if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){ // this call costs much more time than "git blame <file>"
 
     if (git_oid_is_zero(&blameopts.newest_commit))
       strcpy(spec, "HEAD");
@@ -315,8 +322,8 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
           days_since_last_change = (cur_time - commit_time) / 86400; // days; the smaller, the more important
           /* Use log2() to reduce the effect of large days. 
             Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-          if (days_since_last_change == 0) line_score[line] = 0;
-          else line_score[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+          if (days_since_last_change == 0) line_age_days[line] = 0;
+          else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
           git_commit_free(commit);
         }
         
@@ -326,8 +333,8 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
       line++;
     }
 
-    if (!line_score.empty())
-      file2line2age_map[filename] = line_score;
+    if (!line_age_days.empty())
+      file2line2age_map[filename] = line_age_days;
 
     git_blame_free(blame);
     git_blob_free(blob);
@@ -338,6 +345,119 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
   return false;
   
   
+}
+
+/* get age of lines using git command line. 
+  git_directory: /home/usrname/repo/
+*/
+bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
+                    std::map<std::string, std::map<unsigned int, u32>> &file2line2age_map){
+    std::map<unsigned int, u32> line_age_days;
+
+    // std::string outfile_name("/burst_blameout");
+    // std::string blame_out = git_directory + outfile_name;
+    std::string blame_out = git_directory + "burst_blameout";
+    
+    //shell script, getting pairs [unix_time line_number]
+    // std::string sh_script("./last_cmit_time.sh"); 
+    // std::string cmd = sh_script + " " + git_directory + " " + relative_file_path + " " + blame_out;
+
+    /*
+    // cd ${git_directory} &&
+    // git blame --date=unix ${relative_file_path} \
+    // | grep -o -P "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]+( )+[0-9]+" \
+    // > ${blame_out}
+    */
+    std::string cmd_cd("cd"), cmd_space(" "), cmd_andand("&&"), cmd_git_blame("git blame --date=unix"),
+              cmd_reg("| grep -o -P \"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]+( )+[0-9]+\""),
+              cmd_output(">"), cmd_redirect(" 2>&1");
+    std::string cmd;
+    cmd = cmd_cd + cmd_space + git_directory + cmd_space + cmd_andand + cmd_space +
+          cmd_git_blame + cmd_space + relative_file_path + cmd_space +
+          cmd_reg + cmd_space + cmd_output + cmd_space + blame_out;
+    //std::cout << cmd.c_str() << std::endl;
+
+    int status = system(cmd.c_str());
+    if(status < 0)  // error
+    {
+        //printf("cmd: %s\t error: %s", cmd.c_str(), strerror(errno));
+        return false;
+    }
+
+    if(WIFEXITED(status)) // success
+    {
+        //printf("normal termination, exit status = %d\n", WEXITSTATUS(status));
+
+        sleep(1);
+        time_t cur_time = std::time(0);
+        std::ifstream time2line(blame_out.c_str());
+        unsigned long int unix_time;
+        unsigned int line, days_since_last_change;
+        if (time2line.is_open()){
+            while (time2line >> unix_time >> line){
+                days_since_last_change = (cur_time - unix_time) / 86400; //days
+                /* Use log2() to reduce the effect of large days. 
+                  Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
+                if (days_since_last_change == 0) line_age_days[line] = 0;
+                else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+            }
+
+            if (!line_age_days.empty())
+                file2line2age_map[relative_file_path] = line_age_days;
+            time2line.close();
+        }
+
+        return true;
+    }
+
+    return false;
+
+    // else if(WIFSIGNALED(status)) // signal interrupted
+    // {
+    //     //printf("abnormal termination,signal number =%d\n", WTERMSIG(status));
+    //     return false;
+    // }
+    // else if(WIFSTOPPED(status))  // signal paused
+    // {
+    //     //printf("process stopped, signal number =%d\n", WSTOPSIG(status));
+    //     return false;
+    // }
+
+
+}
+
+/* return:
+    exist: 1; not exist: 0*/
+bool is_file_exist(std::string relative_file_path, std::string git_directory){
+
+  //string cmd("cd /home/xgzhu/Downloads/tests/libming && git cat-file -e HEAD:util/read.h 2>&1");
+  std::string cmd;
+  cmd.append("cd ");
+  cmd.append(git_directory.c_str());
+  cmd.append(" && git cat-file -e HEAD:");
+  cmd.append(relative_file_path.c_str());
+  cmd.append(" 2>&1");
+
+  char result_buf[1024];
+	int rc = 0;
+  bool isSuccess = false;
+	FILE *fp;
+
+	fp = popen(cmd.c_str(), "r");
+	if(NULL == fp) return false;
+	// when cmd fail, output "fatal: Path 'tdio.h' does not exist in 'HEAD'";
+  // when succeed, output nothing
+  if (fgets(result_buf, sizeof(result_buf), fp) != NULL) isSuccess = false;
+  else isSuccess = true;
+	
+	rc = pclose(fp);
+	if(-1 == rc){
+		perror("pclose() fails");
+		exit(1);
+	}
+  
+  return isSuccess;
+
 }
 
 
@@ -382,6 +502,7 @@ std::string get_file_path_relative_to_git_dir(std::string relative_file_path,
   return clean_relative_path;
 
 }
+
 
 
 
@@ -433,10 +554,16 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  char use_line_age = 0, use_line_change = 0;
+  bool use_line_age = false, use_line_change = false, use_cmd_age = false, use_cmd_change = false;
 
-  if (getenv("BURST_LINE_AGE")) use_line_age = 1;
-  if (getenv("BURST_LINE_CHANGE")) use_line_change = 1;
+  if (getenv("BURST_LINE_AGE")) use_line_age = true;
+  if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
+  // if set both, only use command
+  if (use_line_age && use_cmd_age) use_line_age = false;
+
+  if (getenv("BURST_LINE_CHANGE")) use_line_change = true;
+  if (getenv("BURST_COMMAND_CHANGE")) use_cmd_change = true;
+  if (use_line_change && use_cmd_change) use_line_change = false;
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -452,9 +579,12 @@ bool AFLCoverage::runOnModule(Module &M) {
   /* Instrument all the things! */
   git_libgit2_init();
 
-  int inst_blocks = 0, inst_ages = 0, inst_changes = 0;
+  int inst_blocks = 0, inst_ages = 0, inst_changes = 0,
+      module_total_ages = 0, module_total_changes = 0,
+      module_ave_ages = 0, module_ave_chanegs = 0;
 
   std::set<unsigned int> bb_lines;
+  std::set<std::string> unexist_files;
   unsigned int line;
   std::string git_path;
   git_repository *repo = nullptr;
@@ -468,7 +598,7 @@ bool AFLCoverage::runOnModule(Module &M) {
     /* Get repository path and object */
     if (git_no_found && !is_one_commit){
       SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
-      std::string funcdir, funcfile;
+      std::string funcdir, funcfile, func_abs_path;// func_clean_path;
       git_buf gitDir = {0,0,0};
       F.getAllMetadata(MDs);
       for (auto &MD : MDs) {
@@ -480,18 +610,19 @@ bool AFLCoverage::runOnModule(Module &M) {
             if (!funcfile.empty() && !funcdir.empty()){
               // fix path here; if "funcfile" does not start with "/", use funcdir as the prefix of funcfile
               if (!startsWith(funcfile, "/")){
-                funcdir.append("/");
-                funcdir.append(funcfile);
-                funcfile.assign(funcdir);
-              }
+                func_abs_path = funcdir;
+                func_abs_path.append("/");
+                func_abs_path.append(funcfile);
+              } else func_abs_path = funcfile;
 
-              git_no_found = git_repository_discover(&gitDir, funcfile.c_str(), 0, "/");
+              git_no_found = git_repository_discover(&gitDir, func_abs_path.c_str(), 0, "/");
               
               if (!git_no_found){
                 git_no_found = git_repository_open(&repo, gitDir.ptr);
                 /* If the entire commit history contains only one commit, it may be a third-party library. 
                       Don't calculate age or change */
                 if (!git_no_found){
+                  
                   git_revwalk * walker = nullptr;
                   if (git_revwalk_new(&walker, repo)){
                     git_no_found = 1;
@@ -515,7 +646,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     if (!count_cmts){
                       git_no_found = 1;
                       is_one_commit = 1;
-                      OKF("One commit only.");
+                      OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
                     } 
 
                   } else{
@@ -535,6 +666,11 @@ bool AFLCoverage::runOnModule(Module &M) {
                 std::string git_end(".git/"); 
                 std::size_t pos = git_path.rfind(git_end.c_str());
                 if (pos != std::string::npos) git_path.erase(pos, git_end.length());
+
+                // func_clean_path = get_file_path_relative_to_git_dir(funcfile, funcdir, git_path);
+                // /* Check if file exists in HEAD */
+                // if (!is_file_exist(func_clean_path, git_path)) git_no_found = 1;
+
                 break;
               }
             }
@@ -591,14 +727,27 @@ bool AFLCoverage::runOnModule(Module &M) {
             clean_relative_path = get_file_path_relative_to_git_dir(filename, filedir, git_path);
             // std::cout << "relative path: " << clean_relative_path << std::endl;
             if (!clean_relative_path.empty()){
-                /* calculate score of a block */
+              
+              /* Check if file exists in HEAD using command mode */
+              if (use_cmd_age){
+                if (unexist_files.count(clean_relative_path)) break;
+                else if (!map_age_scores.count(clean_relative_path)) {
+                  if (!is_file_exist(clean_relative_path, git_path)){
+                    unexist_files.insert(clean_relative_path);
+                    break;
+                  }
+                }
+              }
+            
+              /* calculate score of a block */
               if (!bb_lines.count(line)){
                 bb_lines.insert(line);
                 
                 // calculate line age
-                if (use_line_age) {
+                if (use_line_age || use_cmd_age){
                   if (!map_age_scores.count(clean_relative_path)){
-                    calculate_line_age(repo, clean_relative_path, map_age_scores);
+                    if (use_line_age) calculate_line_age(repo, clean_relative_path, map_age_scores);
+                    else if (use_cmd_age) calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
                   }
 
                   if (map_age_scores.count(clean_relative_path)){
@@ -608,6 +757,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     }
                   }
                 }
+
                 // calculate line change
                 if (use_line_change){
                   if (!map_bursts_scores.count(clean_relative_path)){
@@ -663,6 +813,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (bb_age_count > 0){ //only when age is assigned
         bb_age_avg = bb_age_total / bb_age_count;
         inst_ages ++;
+        module_total_ages += bb_age_avg;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
@@ -696,6 +847,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (bb_burst_count > 0){ //only when change is assigned
         bb_burst_avg = bb_burst_total / bb_burst_count;
         inst_changes++;
+        module_total_changes += bb_burst_avg;
         // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *ChangeLargestType = Int64Ty;
@@ -740,8 +892,19 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    if (use_line_age) OKF("Use line ages. Instrumented %u ages.", inst_ages);
-    if (use_line_change) OKF("Use line changes. Instrumented %u changes.", inst_changes);
+
+    if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
+    if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
+    if ((use_line_age || use_cmd_age) && !is_one_commit){
+      if (use_line_age)
+        OKF("Use line ages. Instrumented %u BBs with the average of log2(days)=%.2f.", 
+                  inst_ages, (float)module_ave_ages/WEIGHT_FAC);
+      else
+        OKF("Use command ages. Instrumented %u BBs with the average of log2(days)=%.2f.", 
+                  inst_ages, (float)module_ave_ages/WEIGHT_FAC);
+    }
+    if ((use_line_change || use_cmd_change) && !is_one_commit) 
+      OKF("Use line changes. Instrumented %u BBs with the average change of %u changes.", inst_changes, module_ave_chanegs);
 
   }
 
