@@ -220,18 +220,19 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
     git_object_free(obj);
    
     // diff current commit to a younger commit
-    if (younger_neighbor_blob) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
+    if (line_changes.first_diff == 0) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
                                                 NULL, NULL, NULL, NULL, NULL, 
                                                 older_current_and_younger_neighbor_line_diff_callback, &line_changes);
-    if (!younger_neighbor_blob)  line_changes.first_diff = 0;
+    
     // update the number of changes in head commit
     git_diff_blobs(older_current_blob, NULL, head_blob, 
                     NULL, NULL, NULL, NULL, NULL, 
                     older_current_and_head_line_diff_callback, &line_changes);
 
-    if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
+    if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
     younger_neighbor_blob = older_current_blob;
 
+    if (line_changes.first_diff == 1)  line_changes.first_diff = 0;
     // only needed for two neighbour commits
     line_changes.old_changed_lines.clear();
     
@@ -243,7 +244,7 @@ bool calculate_line_change_count(git_repository *repo, const std::string filenam
   if (!line_changes.line2changes_map.empty())
       file2line2changes_map[filename] = line_changes.line2changes_map;
 
-  if (younger_neighbor_blob) git_blob_free(younger_neighbor_blob);
+  if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
   git_blob_free(head_blob);
 
   return true;
@@ -268,7 +269,7 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
   git_object_size_t i, rawsize;
   u32 days_since_last_change;
 
-  std::map<unsigned int, u32> line_score;
+  std::map<unsigned int, u32> line_age_days;
 
 
   if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){
@@ -315,8 +316,8 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
           days_since_last_change = (cur_time - commit_time) / 86400; // days; the smaller, the more important
           /* Use log2() to reduce the effect of large days. 
             Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-          if (days_since_last_change == 0) line_score[line] = 0;
-          else line_score[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+          if (days_since_last_change == 0) line_age_days[line] = 0;
+          else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
           git_commit_free(commit);
         }
         
@@ -326,8 +327,8 @@ bool calculate_line_age(git_repository *repo, const std::string filename,
       line++;
     }
 
-    if (!line_score.empty())
-      file2line2age_map[filename] = line_score;
+    if (!line_age_days.empty())
+      file2line2age_map[filename] = line_age_days;
 
     git_blame_free(blame);
     git_blob_free(blob);
@@ -452,7 +453,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   /* Instrument all the things! */
   git_libgit2_init();
 
-  int inst_blocks = 0, inst_ages = 0, inst_changes = 0;
+  int inst_blocks = 0, inst_ages = 0, inst_changes = 0, 
+      module_total_ages = 0, module_total_changes = 0,
+      module_ave_ages = 0, module_ave_chanegs = 0;
 
   std::set<unsigned int> bb_lines;
   unsigned int line;
@@ -515,7 +518,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     if (!count_cmts){
                       git_no_found = 1;
                       is_one_commit = 1;
-                      OKF("One commit only.");
+                      OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
                     } 
 
                   } else{
@@ -663,6 +666,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (bb_age_count > 0){ //only when age is assigned
         bb_age_avg = bb_age_total / bb_age_count;
         inst_ages ++;
+        module_total_ages += bb_age_avg;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
@@ -696,6 +700,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if (bb_burst_count > 0){ //only when change is assigned
         bb_burst_avg = bb_burst_total / bb_burst_count;
         inst_changes++;
+        module_total_changes += bb_burst_avg;
         // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *ChangeLargestType = Int64Ty;
@@ -740,8 +745,13 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    if (use_line_age) OKF("Use line ages. Instrumented %u ages.", inst_ages);
-    if (use_line_change) OKF("Use line changes. Instrumented %u changes.", inst_changes);
+
+    if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
+    if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
+    if (use_line_age && !is_one_commit) OKF("Use line ages. Instrumented %u BBs with the average of log2(days)=%.2f", 
+                  inst_ages, (float)module_ave_ages/WEIGHT_FAC);
+    if (use_line_change && !is_one_commit) OKF("Use line changes. Instrumented %u BBs with the average change of %u changes.", 
+                  inst_changes, module_ave_chanegs);
 
   }
 
