@@ -54,8 +54,8 @@ Install
 
 ### About configure
 
-    export BURST_LINE_AGE=1
-    export BURST_LINE_CHANGE=1
+    export BURST_COMMAND_AGE=1
+    export BURST_COMMAND_CHANGE=1
     CC=/path/to/burstfuzz/afl-clang-fast ./configure [...options...]
     make
 
