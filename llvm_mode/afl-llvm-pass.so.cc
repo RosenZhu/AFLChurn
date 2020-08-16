@@ -876,8 +876,6 @@ bool AFLCoverage::runOnModule(Module &M) {
       unsigned int bb_age_total = 0, bb_age_avg = 0, bb_age_count = 0;
       unsigned int bb_burst_total = 0, bb_burst_avg = 0, bb_burst_count = 0;
       
-      //std::string pdir("../"), curdir("./");
-   
       if (!bb_lines.empty())
             bb_lines.clear();
       bb_lines.insert(0);
@@ -907,25 +905,22 @@ bool AFLCoverage::runOnModule(Module &M) {
             clean_relative_path = get_file_path_relative_to_git_dir(filename, filedir, git_path);
             // std::cout << "relative path: " << clean_relative_path << std::endl;
             if (!clean_relative_path.empty()){
-              
-              /* Check if file exists in HEAD using command mode */
-              
-              if (unexist_files.count(clean_relative_path)) break;
-              else if ( (!map_age_scores.count(clean_relative_path) && use_cmd_age) || 
-                    (!map_bursts_scores.count(clean_relative_path) && use_cmd_change) ) {
-                if (!is_file_exist(clean_relative_path, git_path)){
-                  unexist_files.insert(clean_relative_path);
-                  break;
-                }
-              }
-              
-            
               /* calculate score of a block */
+                /* Check if file exists in HEAD using command mode */
+              if (unexist_files.count(clean_relative_path)) break;
+
               if (!bb_lines.count(line)){
                 bb_lines.insert(line);
                 /* process files that have not been processed */
                 if (!processed_files.count(clean_relative_path)){
                   processed_files.insert(clean_relative_path);
+
+                  /* Check if file exists in HEAD using command mode */
+                  if (!is_file_exist(clean_relative_path, git_path)){
+                    unexist_files.insert(clean_relative_path);
+                    break;
+                  }
+                  
                   /* the ages for lines */
                   if (use_libgit2_age)
                     calculate_line_age(repo, clean_relative_path, map_age_scores);
