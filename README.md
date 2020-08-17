@@ -61,3 +61,6 @@ Install
 
 Be sure to also include CXX set to afl-clang-fast++ for C++ code.
     
+## run fuzzing
+
+    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -- <file_path> [...parameters...]
