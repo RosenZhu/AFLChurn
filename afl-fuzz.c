@@ -97,7 +97,7 @@ double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_changes = 10000.0;          /* minimun path changes among all seeds */
 
 double agg_weight_age = 0, agg_weight_change = 0; /* aggregate weight */
-size_t agg_count_age = 0, agg_count_change = 0;  /* aggregate count */
+size_t path_count = 0;  /* aggregate count */
 
 double show_factor = 0.0;
 /********************    AFL Variables    *********************/
@@ -2742,8 +2742,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   // for average
   agg_weight_age += q->path_age;
   agg_weight_change += q->path_change;
-  agg_count_age++;
-  agg_count_change++;
+  path_count++;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
@@ -4897,8 +4896,8 @@ static u32 calculate_score(struct queue_entry* q) {
       if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
       else {
         // the larger change gets higher weight
-        if (agg_count_change && (min_p_changes != max_p_changes)){ // when using changes
-          avg_weight_change = agg_weight_change / agg_count_change;
+        if (path_count && (min_p_changes != max_p_changes)){ // when using changes
+          avg_weight_change = agg_weight_change / path_count;
 
           if (q->path_change       - 50 > avg_weight_change) burst_factor += 8;
           else if (q->path_change  - 30 > avg_weight_change) burst_factor += 6;
@@ -4910,8 +4909,8 @@ static u32 calculate_score(struct queue_entry* q) {
           else if (q->path_change  + 5 < avg_weight_change) burst_factor += 0.75;
         }
         // age: the smaller age gets higher weight
-        if (agg_count_age && (max_p_age != min_p_age)){ // when using ages
-          avg_weight_age = agg_weight_age / agg_count_age;
+        if (path_count && (max_p_age != min_p_age)){ // when using ages
+          avg_weight_age = agg_weight_age / path_count;
 
           if (pow(2, q->path_age)       * 0.1 > pow(2, avg_weight_age)) burst_factor += 0.1;
           else if (pow(2, q->path_age)  * 0.25 > pow(2, avg_weight_age)) burst_factor += 0.25;
@@ -8161,7 +8160,7 @@ int main(int argc, char** argv) {
   switch (schedule) {
     case ANNEAL: OKF ("Using Annealing-based Power Schedules (ANNEAL)"); break;
     case AVERAGE: OKF("Using percentage based on average score (AVERAGE)"); break;
-    default: FATAL ("Unkown power schedule");
+    default: FATAL ("Unknown power schedule");
   }
 
   if (getenv("AFL_PRELOAD")) {

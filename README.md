@@ -60,7 +60,18 @@ Install
     make
 
 Be sure to also include CXX set to afl-clang-fast++ for C++ code.
-    
+
+### configure the time period to record changes
+
+    export BURST_SINCE_MONTHS=num_months
+
+e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 months
+
 ## run fuzzing
 
     afl-fuzz -i <input_dir> -o <out_dir> -p anneal -- <file_path> [...parameters...]
+
+### option -p
+
+    -p anneal
+    -p average
