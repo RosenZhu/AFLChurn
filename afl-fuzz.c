@@ -96,6 +96,9 @@ double max_p_age = 0.0,                /* max path age among all seeds */
        max_p_changes = 0.0,            /* max path changes among all seeds */
        min_p_changes = 10000.0;          /* minimun path changes among all seeds */
 
+double agg_weight_age = 0, agg_weight_change = 0; /* aggregate weight */
+size_t path_count = 0;  /* aggregate count */
+
 double show_factor = 0.0;
 /********************    AFL Variables    *********************/
 
@@ -307,6 +310,12 @@ static u8* (*post_handler)(u8* buf, u32* len);
 static s8  interesting_8[]  = { INTERESTING_8 };
 static s16 interesting_16[] = { INTERESTING_8, INTERESTING_16 };
 static s32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
+
+static u8 schedule = 0;
+enum{
+  /* 00 */ ANNEAL,    /* default */
+  /* 01 */ AVERAGE
+};
 
 /* Fuzzing stages */
 
@@ -2723,13 +2732,17 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
 #endif
 
-  //update max and min path weight for all seeds
-
+  // anneal: update max and min path weight for all seeds
   if (max_p_age < q->path_age) max_p_age = q->path_age;
   if (min_p_age > q->path_age) min_p_age = q->path_age;
 
   if (max_p_changes < q->path_change) max_p_changes = q->path_change;
   if (min_p_changes > q->path_change) min_p_changes = q->path_change;
+
+  // for average
+  agg_weight_age += q->path_age;
+  agg_weight_change += q->path_change;
+  path_count++;
 
   total_bitmap_size += q->bitmap_size;
   total_bitmap_entries++;
@@ -4804,7 +4817,12 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_exec_us = total_cal_us / total_cal_cycles;
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
+
+  double burst_factor = 0, rela_p_age, rela_p_change, score_pow;
+  double avg_weight_age, avg_weight_change;
   
+  q->times_selected ++;
+
   /* Adjust score based on execution speed of this path, compared to the
      global average. Multiplier ranges from 0.1x to 3x. Fast inputs are
      less expensive to fuzz, so we're giving them more air time. */
@@ -4857,48 +4875,62 @@ static u32 calculate_score(struct queue_entry* q) {
 
   }
 
-  /* burst-info factor */
-  /* 
-  Alternative way to calculate factor.
-    //////
-    // could also be a global variable that is updated in calibrate_case
-    double agg_weight = 0; 
-    size_t agg_count = 0;
+  switch (schedule){
 
-    struct queue_entry* t = queue;
-    while (t) {
-      agg_weight += t->p_weight;
-      agg_count++;
-      t = t->next;
-    }
-    //////
+    case ANNEAL:
+      if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+      else {
+        // the smaller age gets higher factor
+        if (max_p_age == min_p_age) rela_p_age = 0;
+        else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
+        // the higher change gets higher factor
+        if (min_p_changes == max_p_changes) rela_p_change = 0;
+        else rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
+        // score_pow: (0,2)
+        score_pow = (rela_p_age + rela_p_change) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+        burst_factor = pow(2, 5 * (score_pow - 1));
+      }
+      break;
 
-    double avg_weight = agg_weight / agg_count;
+    case AVERAGE:
+      if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+      else {
+        // the larger change gets higher weight
+        if (path_count && (min_p_changes != max_p_changes)){ // when using changes
+          avg_weight_change = agg_weight_change / path_count;
 
-    if (q->path_age       * 0.1 > avg_weight) perf_score /= 10;
-    else if (q->path_age  * 0.25 > avg_weight) perf_score /= 4;
-    else if (q->path_age  * 0.5 > avg_weight) perf_score /= 2;
-    else if (q->path_age  * 0.75 > avg_weight) perf_score *= 0.75;
-    else if (q->path_age  * 4 < avg_weight) perf_score *= 3;
-    else if (q->path_age  * 3 < avg_weight) perf_score *= 2;
-    else if (q->path_age  * 2 < avg_weight) perf_score *= 1.5;
-  */
- 
-  q->times_selected ++;
-  double burst_factor, rela_p_age, rela_p_change, score_pow;
+          if (q->path_change       - 50 > avg_weight_change) burst_factor += 8;
+          else if (q->path_change  - 30 > avg_weight_change) burst_factor += 6;
+          else if (q->path_change  - 10 > avg_weight_change) burst_factor += 3;
+          else if (q->path_change  - 5 > avg_weight_change) burst_factor += 1.5;
+          else if (q->path_change  + 50 < avg_weight_change) burst_factor += 0.1;
+          else if (q->path_change  + 30 < avg_weight_change) burst_factor += 0.25;
+          else if (q->path_change  + 10 < avg_weight_change) burst_factor += 0.5;
+          else if (q->path_change  + 5 < avg_weight_change) burst_factor += 0.75;
+        }
+        // age: the smaller age gets higher weight
+        if (path_count && (max_p_age != min_p_age)){ // when using ages
+          avg_weight_age = agg_weight_age / path_count;
 
-  if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
-  else {
-    // the smaller age gets higher factor
-    if (max_p_age == min_p_age) rela_p_age = 0;
-    else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
-    // the higher change gets higher factor
-    if (min_p_changes == max_p_changes) rela_p_change = 0;
-    else rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
-    // score_pow: (0,2)
-    score_pow = (rela_p_age + rela_p_change) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-    burst_factor = pow(2, 5 * (score_pow - 1));
+          if (pow(2, q->path_age)       * 0.1 > pow(2, avg_weight_age)) burst_factor += 0.1;
+          else if (pow(2, q->path_age)  * 0.25 > pow(2, avg_weight_age)) burst_factor += 0.25;
+          else if (pow(2, q->path_age)  * 0.5 > pow(2, avg_weight_age)) burst_factor += 0.5;
+          else if (pow(2, q->path_age)  * 0.75 > pow(2, avg_weight_age)) burst_factor += 0.75;
+          else if (pow(2, q->path_age)  * 10 < pow(2, avg_weight_age)) burst_factor += 8;
+          else if (pow(2, q->path_age)  * 4 < pow(2, avg_weight_age)) burst_factor += 3;
+          else if (pow(2, q->path_age)  * 3 < pow(2, avg_weight_age)) burst_factor += 2;
+          else if (pow(2, q->path_age)  * 2 < pow(2, avg_weight_age)) burst_factor += 1.5;
+        }
+      }
+      
+      break;
+    
+    default:
+      PFATAL("Unkown Power Schedule");
+
   }
+
+  if (burst_factor == 0) burst_factor = 1;
 
   // double age_factor, age_pow, change_factor, change_pow;
   // if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
@@ -8079,6 +8111,14 @@ int main(int argc, char** argv) {
         if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
 
         break;
+      
+      case 'p': /* Power schedule */
+        if (!strcmp(optarg, "anneal")){
+          schedule = ANNEAL;
+        } else if (!strcmp(optarg, "average")){
+          schedule = AVERAGE;
+        }
+        break;
 
       default:
 
@@ -8116,6 +8156,12 @@ int main(int argc, char** argv) {
 
   if (dumb_mode == 2 && no_forkserver)
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
+
+  switch (schedule) {
+    case ANNEAL: OKF ("Using Annealing-based Power Schedules (ANNEAL)"); break;
+    case AVERAGE: OKF("Using percentage based on average score (AVERAGE)"); break;
+    default: FATAL ("Unknown power schedule");
+  }
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);

@@ -34,9 +34,11 @@ envs:
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
 
-- `export BURST_LINE_AGE=1` enables the age of lines.
+- `export BURST_LINE_AGE=1` enables the age of lines using libgit2.
+- `export BURST_COMMAND_AGE=1` enables the age of lines using git command.
 
-- `export BURST_LINE_CHANGE=1` enables the number of changes of lines.
+- `export BURST_LINE_CHANGE=1` enables the number of changes of lines using libgit2.
+- `export BURST_COMMAND_CHANGE=1` enables the number of changes of lines using git command.
 
 Install
 
@@ -52,10 +54,24 @@ Install
 
 ### About configure
 
-    export BURST_LINE_AGE=1
-    export BURST_LINE_CHANGE=1
+    export BURST_COMMAND_AGE=1
+    export BURST_COMMAND_CHANGE=1
     CC=/path/to/burstfuzz/afl-clang-fast ./configure [...options...]
     make
 
 Be sure to also include CXX set to afl-clang-fast++ for C++ code.
-    
+
+### configure the time period to record changes
+
+    export BURST_SINCE_MONTHS=num_months
+
+e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 months
+
+## run fuzzing
+
+    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -- <file_path> [...parameters...]
+
+### option -p
+
+    -p anneal
+    -p average
