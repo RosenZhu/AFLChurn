@@ -356,7 +356,7 @@ void git_diff_current_head(std::string cur_commit_sha, std::string git_directory
 
     rc = pclose(fp);
     if(-1 == rc){
-        printf("pclose() fails\n");
+        printf("git diff pclose() fails\n");
     }
 }
 
@@ -409,7 +409,7 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
 
     rc = pclose(fp);
     if(-1 == rc){
-        printf("pclose() fails\n");
+        printf("git show pclose() fails\n");
     }
 }
 
@@ -478,7 +478,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   
   rc = pclose(fp);
   if(-1 == rc){
-      printf("pclose() fails\n");
+      printf("git log pclose() fails\n");
   }
 
 }
@@ -617,7 +617,7 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
 
   rc = pclose(fp);
   if(-1 == rc){
-    printf("pclose() fails\n");
+    printf("git blame pclose() fails\n");
   }
 
   return true;
@@ -651,7 +651,7 @@ bool is_file_exist(std::string relative_file_path, std::string git_directory){
 	
   rc = pclose(fp);
   if(-1 == rc){
-    printf("pclose() fails\n");
+    printf("git cat-file pclose() fails\n");
   }
   
   return isSuccess;
