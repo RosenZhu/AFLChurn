@@ -100,6 +100,11 @@ double agg_weight_age = 0, agg_weight_change = 0; /* aggregate weight */
 size_t path_count = 0;  /* aggregate count */
 
 double show_factor = 0.0;
+
+static u8 use_burst_age = 0,    /* Use the age information */
+         use_burst_change = 0;  /* Use the change information */
+
+
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -2733,15 +2738,21 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 #endif
 
   // anneal: update max and min path weight for all seeds
-  if (max_p_age < q->path_age) max_p_age = q->path_age;
-  if (min_p_age > q->path_age) min_p_age = q->path_age;
+  if (use_burst_age){
+    if (max_p_age < q->path_age) max_p_age = q->path_age;
+    if (min_p_age > q->path_age) min_p_age = q->path_age;
+  } else max_p_age = min_p_age = 0;
 
-  if (max_p_changes < q->path_change) max_p_changes = q->path_change;
-  if (min_p_changes > q->path_change) min_p_changes = q->path_change;
+  if (use_burst_change){
+    if (max_p_changes < q->path_change) max_p_changes = q->path_change;
+    if (min_p_changes > q->path_change) min_p_changes = q->path_change;
+  } else max_p_changes = min_p_changes = 0;
 
   // for average
-  agg_weight_age += q->path_age;
-  agg_weight_change += q->path_change;
+  if (use_burst_age)
+    agg_weight_age += q->path_age;
+  if (use_burst_change)
+    agg_weight_change += q->path_change;
   path_count++;
 
   total_bitmap_size += q->bitmap_size;
@@ -8148,6 +8159,12 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_ARITH"))      no_arith         = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_FAST_CAL"))      fast_cal         = 1;
+
+  if (getenv("BURST_LINE_AGE") || getenv("BURST_COMMAND_AGE"))
+          use_burst_age = 1;
+  if (getenv("BURST_LINE_CHANGE") || getenv("BURST_COMMAND_CHANGE"))
+          use_burst_change = 1;
+
 
   if (getenv("AFL_HANG_TMOUT")) {
     hang_tmout = atoi(getenv("AFL_HANG_TMOUT"));
