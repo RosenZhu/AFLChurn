@@ -93,17 +93,17 @@
 
 double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_age = 50.0,               /* minimun path age among all seeds */
-       max_p_changes = 0.0,            /* max path changes among all seeds */
-       min_p_changes = 10000.0;          /* minimun path changes among all seeds */
+       max_p_churn = 0.0,            /* max path churn among all seeds */
+       min_p_churn = 10000.0;          /* minimun path churn among all seeds */
 
-double agg_weight_age = 0, agg_weight_change = 0; /* aggregate weight */
+double agg_weight_age = 0, agg_weight_churn = 0; /* aggregate weight */
 size_t path_count = 0;  /* aggregate count */
 
 double show_factor = 0.0;
 
 /* default: use both */
 static u8 use_burst_age = 1,    /* Use the age information */
-         use_burst_change = 1;  /* Use the change information */
+         use_burst_churn = 1;  /* Use the churn information */
 
 
 /********************    AFL Variables    *********************/
@@ -278,7 +278,7 @@ struct queue_entry {
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
-         path_change;                 /* Average number of changes of executed basic blocks */
+         path_churn;                 /* Average number of churns of executed basic blocks */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
@@ -826,7 +826,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->passed_det   = passed_det;
   q->times_selected = 0;
   q->path_age  = 0.0;
-  q->path_change  = 0.0;
+  q->path_churn  = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -2718,10 +2718,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
   }
 
-  u64 *pChangeWt = (u64 *)(trace_bits + MAP_SIZE + 16);
-  u64 *pChangeCnt = (u64 *)(trace_bits + MAP_SIZE + 24);
-  if ((*pChangeCnt) != 0)
-      q->path_change = (double)(*pChangeWt) / (*pChangeCnt);
+  u64 *pChurnWt = (u64 *)(trace_bits + MAP_SIZE + 16);
+  u64 *pChurnCnt = (u64 *)(trace_bits + MAP_SIZE + 24);
+  if ((*pChurnCnt) != 0)
+      q->path_churn = (double)(*pChurnWt) / (*pChurnCnt);
 
 #else
 
@@ -2731,10 +2731,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
   }
 
-  u32 *pChangeWt = (u32 *)(trace_bits + MAP_SIZE + 8);
-  u32 *pChangeCnt = (u32 *)(trace_bits + MAP_SIZE + 12);
-  if ((*pChangeCnt) != 0)
-      q->path_change = (double)(*pChangeWt) / (*pChangeCnt);
+  u32 *pChurnWt = (u32 *)(trace_bits + MAP_SIZE + 8);
+  u32 *pChurnCnt = (u32 *)(trace_bits + MAP_SIZE + 12);
+  if ((*pChurnCnt) != 0)
+      q->path_churn = (double)(*pChurnWt) / (*pChurnCnt);
 
 #endif
 
@@ -2744,16 +2744,16 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     if (min_p_age > q->path_age) min_p_age = q->path_age;
   } else max_p_age = min_p_age = 0;
 
-  if (use_burst_change){
-    if (max_p_changes < q->path_change) max_p_changes = q->path_change;
-    if (min_p_changes > q->path_change) min_p_changes = q->path_change;
-  } else max_p_changes = min_p_changes = 0;
+  if (use_burst_churn){
+    if (max_p_churn < q->path_churn) max_p_churn = q->path_churn;
+    if (min_p_churn > q->path_churn) min_p_churn = q->path_churn;
+  } else max_p_churn = min_p_churn = 0;
 
   // for average
   if (use_burst_age)
     agg_weight_age += q->path_age;
-  if (use_burst_change)
-    agg_weight_change += q->path_change;
+  if (use_burst_churn)
+    agg_weight_churn += q->path_churn;
   path_count++;
 
   total_bitmap_size += q->bitmap_size;
@@ -4830,8 +4830,8 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
 
-  double burst_factor = 0, rela_p_age, rela_p_change, score_pow;
-  double avg_weight_age, avg_weight_change;
+  double burst_factor = 0, rela_p_age, rela_p_churn, score_pow;
+  double avg_weight_age, avg_weight_churn;
   
   q->times_selected ++;
 
@@ -4890,35 +4890,35 @@ static u32 calculate_score(struct queue_entry* q) {
   switch (schedule){
 
     case ANNEAL:
-      if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+      if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
         // the smaller age gets higher factor
         if (max_p_age == min_p_age) rela_p_age = 0;
         else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
-        // the higher change gets higher factor
-        if (min_p_changes == max_p_changes) rela_p_change = 0;
-        else rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
+        // the higher churn gets higher factor
+        if (min_p_churn == max_p_churn) rela_p_churn = 0;
+        else rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
         // score_pow: (0,2)
-        score_pow = (rela_p_age + rela_p_change) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+        score_pow = (rela_p_age + rela_p_churn) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
         burst_factor = pow(2, 5 * (score_pow - 1));
       }
       break;
 
     case AVERAGE:
-      if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+      if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
-        // the larger change gets higher weight
-        if (path_count && (min_p_changes != max_p_changes)){ // when using changes
-          avg_weight_change = agg_weight_change / path_count;
+        // the larger churn gets higher weight
+        if (path_count && (min_p_churn != max_p_churn)){ // when using churn
+          avg_weight_churn = agg_weight_churn / path_count;
 
-          if (q->path_change       - 50 > avg_weight_change) burst_factor += 8;
-          else if (q->path_change  - 30 > avg_weight_change) burst_factor += 6;
-          else if (q->path_change  - 10 > avg_weight_change) burst_factor += 3;
-          else if (q->path_change  - 5 > avg_weight_change) burst_factor += 1.5;
-          else if (q->path_change  + 50 < avg_weight_change) burst_factor += 0.1;
-          else if (q->path_change  + 30 < avg_weight_change) burst_factor += 0.25;
-          else if (q->path_change  + 10 < avg_weight_change) burst_factor += 0.5;
-          else if (q->path_change  + 5 < avg_weight_change) burst_factor += 0.75;
+          if (q->path_churn       - 50 > avg_weight_churn) burst_factor += 8;
+          else if (q->path_churn  - 30 > avg_weight_churn) burst_factor += 6;
+          else if (q->path_churn  - 10 > avg_weight_churn) burst_factor += 3;
+          else if (q->path_churn  - 5 > avg_weight_churn) burst_factor += 1.5;
+          else if (q->path_churn  + 50 < avg_weight_churn) burst_factor += 0.1;
+          else if (q->path_churn  + 30 < avg_weight_churn) burst_factor += 0.25;
+          else if (q->path_churn  + 10 < avg_weight_churn) burst_factor += 0.5;
+          else if (q->path_churn  + 5 < avg_weight_churn) burst_factor += 0.75;
         }
         // age: the smaller age gets higher weight
         if (path_count && (max_p_age != min_p_age)){ // when using ages
@@ -4944,8 +4944,8 @@ static u32 calculate_score(struct queue_entry* q) {
 
   if (burst_factor == 0) burst_factor = 1;
 
-  // double age_factor, age_pow, change_factor, change_pow;
-  // if ((max_p_age == min_p_age) && (max_p_changes == min_p_changes)) burst_factor = 1;
+  // double age_factor, age_pow, churn_factor, churn_pow;
+  // if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
   // else {
   //   // the smaller age gets higher factor
   //   if (max_p_age == min_p_age) age_factor = 0;
@@ -4956,14 +4956,14 @@ static u32 calculate_score(struct queue_entry* q) {
   //     age_factor = pow(2, 10 * (age_pow - 0.5));
   //   } 
   //   // the higher change gets higher factor
-  //   if (min_p_changes == max_p_changes) change_factor = 0;
+  //   if (min_p_churn == max_p_churn) churn_factor = 0;
   //   else{
-  //     rela_p_change = (q->path_change - min_p_changes) / (max_p_changes - min_p_changes);
-  //     change_pow = rela_p_change * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-  //     // change_factor: (1/32, 32)
-  //     change_factor = pow(2, 10 * (change_pow - 0.5));
+  //     rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
+  //     churn_pow = rela_p_churn * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+  //     // churn_factor: (1/32, 32)
+  //     churn_factor = pow(2, 10 * (churn_pow - 0.5));
   //   } 
-  //   burst_factor = age_factor + change_factor;
+  //   burst_factor = age_factor + churn_factor;
   // }
 
   show_factor = burst_factor;
@@ -8132,10 +8132,10 @@ int main(int argc, char** argv) {
         }
         break;
 
-      case 'b': /* age, change, or both */
+      case 'b': /* age, churn, or both */
         if (!strcmp(optarg, "age")){
-          use_burst_change = 0; // disable "change"
-        } else if (!strcmp(optarg, "change")){
+          use_burst_churn = 0; // disable "churn"
+        } else if (!strcmp(optarg, "churn")){
           use_burst_age = 0; // disable "age"
         }
 

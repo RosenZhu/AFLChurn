@@ -30,15 +30,15 @@ envs:
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/libgit2/lib
     
-### install burst
+### install aflchurn
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
 
 - `export BURST_LINE_AGE=1` enables the age of lines using libgit2.
 - `export BURST_COMMAND_AGE=1` enables the age of lines using git command.
 
-- `export BURST_LINE_CHANGE=1` enables the number of changes of lines using libgit2.
-- `export BURST_COMMAND_CHANGE=1` enables the number of changes of lines using git command.
+- `export BURST_LINE_CHURN=1` enables the number of changes of lines using libgit2.
+- `export BURST_COMMAND_CHURN=1` enables the number of changes of lines using git command.
 
 Install
 
@@ -55,13 +55,13 @@ Install
 ### About configure
 
     export BURST_COMMAND_AGE=1
-    export BURST_COMMAND_CHANGE=1
-    CC=/path/to/burstfuzz/afl-clang-fast ./configure [...options...]
+    export BURST_COMMAND_CHURN=1
+    CC=/path/to/aflchurn/afl-clang-fast ./configure [...options...]
     make
 
 Be sure to also include CXX set to afl-clang-fast++ for C++ code.
 
-### configure the time period to record changes
+### configure the time period to record churns
 
     export BURST_SINCE_MONTHS=num_months
 
@@ -78,7 +78,7 @@ power schedule
     -p average
 
 ### option -b
-Choose "age", "change" or both. Default: both
+Choose "age", "churn" or both. Default: both
 
     -b age
-    -b change
+    -b churn

@@ -315,9 +315,9 @@ int main(int argc, char** argv) {
   if (isatty(2) && !getenv("AFL_QUIET")) {
 
 #ifdef USE_TRACE_PC
-    SAYF(cCYA "afl-clang-fast [tpcg] " cBRI VERSION  cRST " by <burstfuzz>\n");
+    SAYF(cCYA "afl-clang-fast [tpcg] " cBRI VERSION  cRST " by <aflchurn>\n");
 #else
-    SAYF(cCYA "afl-clang-fast " cBRI VERSION  cRST " by <burstfuzz>\n");
+    SAYF(cCYA "afl-clang-fast " cBRI VERSION  cRST " by <aflchurn>\n");
 #endif /* ^USE_TRACE_PC */
 
   }
