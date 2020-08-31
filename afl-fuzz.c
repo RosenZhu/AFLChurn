@@ -101,8 +101,9 @@ size_t path_count = 0;  /* aggregate count */
 
 double show_factor = 0.0;
 
-static u8 use_burst_age = 0,    /* Use the age information */
-         use_burst_change = 0;  /* Use the change information */
+/* default: use both */
+static u8 use_burst_age = 1,    /* Use the age information */
+         use_burst_change = 1;  /* Use the change information */
 
 
 /********************    AFL Variables    *********************/
@@ -8131,6 +8132,15 @@ int main(int argc, char** argv) {
         }
         break;
 
+      case 'b': /* age, change, or both */
+        if (!strcmp(optarg, "age")){
+          use_burst_change = 0; // disable "change"
+        } else if (!strcmp(optarg, "change")){
+          use_burst_age = 0; // disable "age"
+        }
+
+        break;
+
       default:
 
         usage(argv[0]);
@@ -8159,11 +8169,6 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_ARITH"))      no_arith         = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_FAST_CAL"))      fast_cal         = 1;
-
-  if (getenv("BURST_LINE_AGE") || getenv("BURST_COMMAND_AGE"))
-          use_burst_age = 1;
-  if (getenv("BURST_LINE_CHANGE") || getenv("BURST_COMMAND_CHANGE"))
-          use_burst_change = 1;
 
 
   if (getenv("AFL_HANG_TMOUT")) {

@@ -72,6 +72,13 @@ e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 
     afl-fuzz -i <input_dir> -o <out_dir> -p anneal -- <file_path> [...parameters...]
 
 ### option -p
+power schedule
 
     -p anneal
     -p average
+
+### option -b
+Choose "age", "change" or both. Default: both
+
+    -b age
+    -b change
