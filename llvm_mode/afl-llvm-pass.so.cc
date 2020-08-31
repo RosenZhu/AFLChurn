@@ -735,7 +735,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   if (isatty(2) && !getenv("AFL_QUIET")) {
 
-    SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST " by <burstfuzz>\n");
+    SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST " by <aflchurn>\n");
 
   } else be_quiet = 1;
 
@@ -759,8 +759,8 @@ bool AFLCoverage::runOnModule(Module &M) {
   // if set both, only use command
   if (use_libgit2_age && use_cmd_age) use_libgit2_age = false;
 
-  if (getenv("BURST_LINE_CHANGE")) use_libgit2_change = true;
-  if (getenv("BURST_COMMAND_CHANGE")) use_cmd_change = true;
+  if (getenv("BURST_LINE_CHURN")) use_libgit2_change = true;
+  if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
   if (use_libgit2_change && use_cmd_change) use_libgit2_change = false;
 
   /* Get globals for the SHM region and the previous location. Note that
@@ -1098,10 +1098,10 @@ bool AFLCoverage::runOnModule(Module &M) {
     }
     if ((use_libgit2_change || use_cmd_change) && !is_one_commit){
       if (use_libgit2_change)
-        OKF("Using libgit2. Instrumented %u BBs with the average change of %u changes.",
+        OKF("Using libgit2. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
       else
-        OKF("Using command line git. Instrumented %u BBs with the average change of %u changes.",
+        OKF("Using command line git. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
     } 
       
