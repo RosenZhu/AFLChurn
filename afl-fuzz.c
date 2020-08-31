@@ -7294,6 +7294,11 @@ static void usage(u8* argv0) {
        "  -d            - quick & dirty mode (skips deterministic steps)\n"
        "  -n            - fuzz without instrumentation (dumb mode)\n"
        "  -x dir        - optional fuzzer dictionary (see README)\n\n"
+      
+       "Power schedules:\n\n"
+
+       "  -p            - age or churn\n"
+       "  -b            - test age or churn\n\n"
 
        "Other stuff:\n\n"
 
@@ -7956,7 +7961,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:")) > 0)
 
     switch (opt) {
 
@@ -8125,7 +8130,7 @@ int main(int argc, char** argv) {
         break;
       
       case 'p': /* Power schedule */
-        if (!strcmp(optarg, "anneal")){
+        if (!strcmp(optarg, "anneal")){ // default
           schedule = ANNEAL;
         } else if (!strcmp(optarg, "average")){
           schedule = AVERAGE;
