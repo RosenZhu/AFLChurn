@@ -1098,10 +1098,10 @@ bool AFLCoverage::runOnModule(Module &M) {
     }
     if ((use_libgit2_change || use_cmd_change) && !is_one_commit){
       if (use_libgit2_change)
-        OKF("Using libgit2. Instrumented %u BBs with the average change of %u changes.",
+        OKF("Using libgit2. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
       else
-        OKF("Using command line git. Instrumented %u BBs with the average change of %u changes.",
+        OKF("Using command line git. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
     } 
       
