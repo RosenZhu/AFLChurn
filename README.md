@@ -22,6 +22,7 @@ install OpenSSL (see [troubleshooting](https://github.com/libgit2/libgit2/blob/m
 install libgit2 [v1.0.1](https://github.com/libgit2/libgit2/archive/v1.0.1.tar.gz)
 
     git clone https://github.com/libgit2/libgit2.git
+    cd libgit2
     mkdir build && cd build
     cmake .. -DCMAKE_INSTALL_PREFIX=/path/to/install/
     cmake --build . --target install

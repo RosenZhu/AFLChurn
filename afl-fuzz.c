@@ -8190,6 +8190,9 @@ int main(int argc, char** argv) {
     default: FATAL ("Unknown power schedule");
   }
 
+  if (use_burst_churn) OKF ("Using 'churn' during fuzzing.");
+  if (use_burst_age) OKF ("Using 'age' during fuzzing.");
+
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
     setenv("DYLD_INSERT_LIBRARIES", getenv("AFL_PRELOAD"), 1);

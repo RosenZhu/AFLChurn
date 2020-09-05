@@ -424,6 +424,17 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   FILE *fp;
   std::set<unsigned int> changed_lines_cur_commit;
   std::map <unsigned int, unsigned int> lines2changes;
+
+  /* Get date of HEAD commit */
+  char head_commit_date[32];
+  FILE *dfp;
+  std::ostringstream datecmd;
+  datecmd << "cd " << git_directory
+          << " && git show -s --format=%cI HEAD";
+  dfp = popen(datecmd.str().c_str(), "r");
+  if (NULL == dfp) return;
+  if (fscanf(dfp, "%s", head_commit_date) != 1) return;
+  pclose(dfp);
   
   // get the commits that change the file of relative_file_path
   // result: commit short SHAs
@@ -447,13 +458,14 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   if (!ch_month){
 
     cmd << "cd " << git_directory 
-        << " && git log --follow --oneline --format=\"%h\" -- " 
-        << relative_file_path << " | grep -Po \"^[0-9a-f]*$\"";
+        << " && git log --before=" 
+        << head_commit_date
+        <<" --follow --oneline --format=\"%h\" -- " 
+        << relative_file_path
+        << " | grep -Po \"^[0-9a-f]*$\"";
     
   }
-    
-
-
+  
   fp = popen(cmd.str().c_str(), "r");
   if(NULL == fp) return;
   /* get lines2changes: git log -> git show -> git diff
@@ -812,6 +824,10 @@ bool AFLCoverage::runOnModule(Module &M) {
                 func_abs_path.append("/");
                 func_abs_path.append(funcfile);
               } else func_abs_path = funcfile;
+
+              /*In some platforms, git_repository_discover() 
+                cannot find the repository folder if func_abs_path points to a file. */
+              func_abs_path = func_abs_path.substr(0, func_abs_path.find_last_of("\\/")); //remove filename in string
 
               git_no_found = git_repository_discover(&gitDir, func_abs_path.c_str(), 0, "/");
               
