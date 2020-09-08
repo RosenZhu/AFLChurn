@@ -34,7 +34,6 @@
 #include "../config.h"
 #include "../debug.h"
 
-#include "git2.h"
 //#include <string.h>
 #include <set>
 #include <map>
@@ -118,143 +117,37 @@ struct line_chns{
     std::set<unsigned int> old_changed_lines;
 };
 
-/* This is a callback for each different line in the comparison of two neighbour commits (sorted by time). */
-int older_current_and_younger_neighbor_line_diff_callback(const git_diff_delta *delta,
-	const git_diff_hunk *hunk,
-	const git_diff_line *line,
-	void *payload){
-    
-    struct line_chns* gp_chns = (struct line_chns *) payload;
-
-    if ((-1 == line->old_lineno) || (-1 == line->new_lineno)) return 0;
-    else {
-        // line->old_lineno will be used to find the changed line number in master commit
-        gp_chns->old_changed_lines.insert(line->old_lineno); 
-    }
-    return 0;
-}
-
-/* This is a callback for each different line in the comparison of the current oldest commit and the HEAD commit. 
-This tries to get the relationship between the changed line number and the line number in the HEAD commit. */
-int older_current_and_head_line_diff_callback(const git_diff_delta *delta,
-	const git_diff_hunk *hunk,
-	const git_diff_line *line,
-	void *payload){
-    
-    struct line_chns* go_chns = (struct line_chns *) payload;
-    if ((-1 == line->old_lineno) || (-1 == line->new_lineno)) return 0;
-    else {
-        // the same old_lineno changes in diff(grand, parent)
-        if (go_chns->old_changed_lines.count(line->old_lineno)){ 
-            // new_lineno is the changed line in master commit
-            if (go_chns->line2changes_map.count(line->new_lineno)) go_chns->line2changes_map[line->new_lineno] ++;
-            else go_chns->line2changes_map[line->new_lineno] = 1;
-        } 
-        else if (go_chns->first_diff){
-          go_chns->line2changes_map[line->new_lineno] = 1;
-        }
-    }
-
-    return 0;
-}
-
-/* The number of changes for lines.
- Caution: git_object_free(obj) may or may not free the "obj".
- */
-bool calculate_line_change_count(git_repository *repo, const std::string filename, 
-                    std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2changes_map){
-  git_oid oid;
-  git_revwalk *walker = nullptr;
-  git_blob *younger_neighbor_blob = NULL, *older_current_blob = NULL;
-  git_blob *head_blob = NULL;
-  char spec[1024] = {0};
-  git_object *obj = NULL;
-  int count_commits = 0, MaxCommits = 1000;
-
-  // get the file contents (blob) in head commit
-  strcpy(spec, "HEAD");
-  strcat(spec, ":");
-  strcat(spec, filename.c_str());
-  if(git_revparse_single(&obj, repo, spec)) return false;
-  if(git_blob_lookup(&head_blob, repo, git_object_id(obj))){
-    git_object_free(obj);
-    return false;
-  } 
-  git_object_free(obj);
-  
-  // create a walk to traverse commits
-  if(git_revwalk_new(&walker, repo)) return false;
-  // the commits are sorted by time, newest to oldest
-  if (git_revwalk_sorting(walker, GIT_SORT_TOPOLOGICAL | GIT_SORT_TIME)){
-    git_blob_free(head_blob);
-    git_revwalk_free(walker);
-    return false;
-  }
-  // push the head commit to the walker
-  if (git_revwalk_push_head(walker)){
-    git_blob_free(head_blob);
-    git_revwalk_free(walker);
-    return false;
-  }
-  
-  struct line_chns line_changes;
-  line_changes.first_diff = 1;
-  
-  // if only one commit, the "next" commit is NULL
-  while (!git_revwalk_next(&oid, walker)){
-    
-    // get file blob in current commit
-    memset(spec, 0, 1024);
-    if (git_oid_is_zero(&oid))
-        strcpy(spec, "HEAD");
-    else
-        git_oid_tostr(spec, sizeof(spec), &oid);
-    strcat(spec, ":");
-    strcat(spec, filename.c_str());
-
-    if(git_revparse_single(&obj, repo, spec)) break;
-
-    if(git_blob_lookup(&older_current_blob, repo, git_object_id(obj))){
-      git_object_free(obj);
-      break;
-    }
-
-    git_object_free(obj);
-   
-    // diff current commit to a younger commit; younger_neighbor_blob does not exist in the first diff
-    if (line_changes.first_diff == 0) git_diff_blobs(older_current_blob, NULL, younger_neighbor_blob, 
-                                                NULL, NULL, NULL, NULL, NULL, 
-                                                older_current_and_younger_neighbor_line_diff_callback, &line_changes);
-    
-    // update the number of changes in head commit
-    git_diff_blobs(older_current_blob, NULL, head_blob, 
-                    NULL, NULL, NULL, NULL, NULL, 
-                    older_current_and_head_line_diff_callback, &line_changes);
-
-    if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
-    younger_neighbor_blob = older_current_blob;
-
-    if (line_changes.first_diff == 1)  line_changes.first_diff = 0;
-    // only needed for two neighbour commits
-    line_changes.old_changed_lines.clear();
-    
-    // Only count changes in the last MaxCommits commits.
-    count_commits++;
-    if (count_commits > MaxCommits) break;
-
+/* use popen() to execute git command */
+std::string execute_git_cmd (std::string directory, std::string str_cmd){
+  FILE *fp;
+  int rc=0;
+  std::string str_res = "";
+  char ch_git_res[2048];
+  std::ostringstream git_cmd;
+  git_cmd << "cd " 
+          << directory
+          << " && "
+          << str_cmd;
+  fp = popen(git_cmd.str().c_str(), "r");
+	if(NULL == fp) return str_res;
+	// when cmd fail, output "fatal: ...";
+  // when succeed, output result
+  if (fscanf(fp, "%s", ch_git_res) == 1) {
+    str_res.assign(ch_git_res);  //, strlen(ch_git_res)
   }
 
-  git_revwalk_free(walker);
-  
-  if (!line_changes.line2changes_map.empty())
-      file2line2changes_map[filename] = line_changes.line2changes_map;
+  if (startsWith(str_res, "fatal")){
+    str_res = "";
+  }
 
-  if (line_changes.first_diff == 0) git_blob_free(younger_neighbor_blob);
-  git_blob_free(head_blob);
+  rc = pclose(fp);
+  if(-1 == rc){
+    printf("git command pclose() fails\n");
+  }
 
-  return true;
+  return str_res;
+
 }
-
 
 /* 
  git diff current_commit HEAD -- file_path. 
@@ -495,96 +388,6 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
 
 }
 
-/*
-  Calculate score for a new source file, which is just met.
-  One file is calculated only once.
-  filename: relative path to git repo
-*/
-bool calculate_line_age(git_repository *repo, const std::string filename, 
-                        std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2age_map){
-  git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
-  git_blame *blame = NULL;
-  git_commit *commit = NULL;
-  time_t commit_time, cur_time = std::time(0);
-  unsigned int break_on_null_hunk, line;
-  char spec[1024] = {0};
-  git_blob *blob;
-  git_object *obj;
-  const char *rawdata;
-  git_object_size_t i, rawsize;
-  unsigned int days_since_last_change;
-
-  std::map<unsigned int, unsigned int> line_age_days;
-
-
-  if(!git_blame_file(&blame, repo, filename.c_str(), &blameopts)){ // this call costs much more time than "git blame <file>"
-
-    if (git_oid_is_zero(&blameopts.newest_commit))
-      strcpy(spec, "HEAD");
-    else
-      git_oid_tostr(spec, sizeof(spec), &blameopts.newest_commit);
-
-    strcat(spec, ":");
-    strcat(spec, filename.c_str());
-
-    if (git_revparse_single(&obj, repo, spec)){
-      git_blame_free(blame);
-      return false;
-    }
-
-    if (git_blob_lookup(&blob, repo, git_object_id(obj))){
-      git_blame_free(blame);
-      git_object_free(obj);
-      return false;
-    }
-
-    git_object_free(obj);
-
-    rawdata = (const char*)git_blob_rawcontent(blob);
-    rawsize = git_blob_rawsize(blob);
-
-    line = 1;
-    i = 0;
-    break_on_null_hunk = 0;
-
-    while(i < rawsize){
-      const char *eol = (const char*)memchr(rawdata + i, '\n', (size_t)(rawsize - i));
-      const git_blame_hunk *hunk = git_blame_get_hunk_byline(blame, line);
-
-      if (break_on_null_hunk && !hunk)
-        break;
-
-      if (hunk){
-        break_on_null_hunk = 1;
-        if (!git_commit_lookup(&commit, repo, &hunk->final_commit_id)){
-          commit_time  = git_commit_time(commit);
-          days_since_last_change = (cur_time - commit_time) / 86400; // days; the smaller, the more important
-          /* Use log2() to reduce the effect of large days. 
-            Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-          if (days_since_last_change == 0) line_age_days[line] = 0;
-          else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
-          git_commit_free(commit);
-        }
-        
-      }
-
-      i = (int)(eol - rawdata + 1);
-      line++;
-    }
-
-    if (!line_age_days.empty())
-      file2line2age_map[filename] = line_age_days;
-
-    git_blame_free(blame);
-    git_blob_free(blob);
-
-    return true;
-  }
-    
-  return false;
-  
-  
-}
 
 /* get age of lines using git command line. 
   git_directory: /home/usrname/repo/
@@ -764,16 +567,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  bool use_libgit2_age = false, use_libgit2_change = false, use_cmd_age = false, use_cmd_change = false;
+  bool use_cmd_age = false, use_cmd_change = false;
 
-  if (getenv("BURST_LINE_AGE")) use_libgit2_age = true;
+  
   if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
-  // if set both, only use command
-  if (use_libgit2_age && use_cmd_age) use_libgit2_age = false;
-
-  if (getenv("BURST_LINE_CHURN")) use_libgit2_change = true;
   if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
-  if (use_libgit2_change && use_cmd_change) use_libgit2_change = false;
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -787,7 +585,6 @@ bool AFLCoverage::runOnModule(Module &M) {
       0, GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
   /* Instrument all the things! */
-  git_libgit2_init();
 
   int inst_blocks = 0, inst_ages = 0, inst_changes = 0,
       module_total_ages = 0, module_total_changes = 0,
@@ -797,7 +594,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   std::set<std::string> unexist_files, processed_files;
   unsigned int line;
   std::string git_path;
-  git_repository *repo = nullptr;
+  
   int git_no_found = 1, // 0: found; otherwise, not found
       is_one_commit = 0; // don't calculate for --depth 1
 
@@ -809,7 +606,7 @@ bool AFLCoverage::runOnModule(Module &M) {
     if (git_no_found && !is_one_commit){
       SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
       std::string funcdir, funcfile, func_abs_path;// func_clean_path;
-      git_buf gitDir = {0,0,0};
+      
       F.getAllMetadata(MDs);
       for (auto &MD : MDs) {
         if (MDNode *N = MD.second) {
@@ -825,63 +622,43 @@ bool AFLCoverage::runOnModule(Module &M) {
                 func_abs_path.append(funcfile);
               } else func_abs_path = funcfile;
 
-              /*In some platforms, git_repository_discover() 
-                cannot find the repository folder if func_abs_path points to a file. */
-              func_abs_path = func_abs_path.substr(0, func_abs_path.find_last_of("\\/")); //remove filename in string
+              // get the real path for the current file
+              char *realp = realpath(func_abs_path.c_str(), NULL);
+              if (realp == NULL) git_no_found = 1;
+              else{
+                func_abs_path.assign(realp);
+                free(realp);
+                git_no_found = 0;
+              }
 
-              git_no_found = git_repository_discover(&gitDir, func_abs_path.c_str(), 0, "/");
-              
               if (!git_no_found){
-                git_no_found = git_repository_open(&repo, gitDir.ptr);
-                /* If the entire commit history contains only one commit, it may be a third-party library. 
-                      Don't calculate age or change */
+                /* Directory of the file. */
+                func_abs_path = func_abs_path.substr(0, func_abs_path.find_last_of("\\/")); //remove filename in string
+                //git rev-parse --show-toplevel: show the root folder of a repository
+                // result: /home/usr/repo_name
+                std::string cmd_repo ("git rev-parse --show-toplevel 2>&1");
+                
+                git_path = execute_git_cmd(func_abs_path, cmd_repo);
+                if (git_path.empty()) git_no_found = 1;
+                else git_path.append("/"); // result: /home/usr/repo_name/
+                
+                /* Check shallow git repository */
+                // git rev-list HEAD --count: count the number of commits
                 if (!git_no_found){
+                  std::string cmd_count ("git rev-list HEAD --count 2>&1");
+                  std::string commit_cnt = execute_git_cmd(git_path, cmd_count);
                   
-                  git_revwalk * walker = nullptr;
-                  if (git_revwalk_new(&walker, repo)){
+                  if (commit_cnt.compare("1") == 0){ //only one commit
                     git_no_found = 1;
-                    continue;
+                    is_one_commit = 1;
+                    OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
+                  
                   }
-
-                  if (git_revwalk_sorting(walker, GIT_SORT_NONE)){
-                    git_revwalk_free(walker);
-                    git_no_found = 1;
-                    continue;
-                  }
-
-                  if (!git_revwalk_push_head(walker)){
-                    git_oid oid;
-                    int count_cmts = 0;
-                    while(!git_revwalk_next(&oid, walker)){
-                      count_cmts++;
-                      break;
-                    }
-
-                    if (!count_cmts){
-                      git_no_found = 1;
-                      is_one_commit = 1;
-                      OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
-                    } 
-
-                  } else{
-                    // some errors when pushing head to walk
-                    git_no_found = 1;
-                  }
-
-                  git_revwalk_free(walker);
+                  
                 }
-
+                
               }
-
-              if (!git_no_found){
-                git_path.assign(gitDir.ptr, gitDir.size);
-                // std::cout << "git path: " << git_path << std::endl;
-                // remove ".git/" at the end of git_path
-                std::string git_end(".git/"); 
-                std::size_t pos = git_path.rfind(git_end.c_str());
-                if (pos != std::string::npos) git_path.erase(pos, git_end.length());
-                break;
-              }
+          
             }
               
           }
@@ -951,18 +728,14 @@ bool AFLCoverage::runOnModule(Module &M) {
                   }
                   
                   /* the ages for lines */
-                  if (use_libgit2_age)
-                    calculate_line_age(repo, clean_relative_path, map_age_scores);
-                  else if (use_cmd_age) 
+                  if (use_cmd_age) 
                     calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
                   /* the number of changes for lines */
-                  if (use_libgit2_change)
-                    calculate_line_change_count(repo, clean_relative_path, map_bursts_scores);
-                  else if (use_cmd_change)
+                  if (use_cmd_change)
                     calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores);
                 }
                 
-                if (use_libgit2_age || use_cmd_age){
+                if (use_cmd_age){
                   // calculate line age
                   if (map_age_scores.count(clean_relative_path)){
                     if (map_age_scores[clean_relative_path].count(line)){
@@ -972,7 +745,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                   }
                 }
 
-                if (use_libgit2_change || use_cmd_change){
+                if (use_cmd_change){
                   // calculate line change
                   if (map_bursts_scores.count(clean_relative_path)){
                     if (map_bursts_scores[clean_relative_path].count(line)){
@@ -1104,30 +877,17 @@ bool AFLCoverage::runOnModule(Module &M) {
     
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
-    if ((use_libgit2_age || use_cmd_age) && !is_one_commit){
-      if (use_libgit2_age)
-        OKF("Using libgit2. Instrumented %u BBs with the average of log2(days)=%.2f ages.", 
-                  inst_ages, (float)module_ave_ages/WEIGHT_FAC);
-      else
+    if (use_cmd_age && !is_one_commit){
         OKF("Using command line git. Instrumented %u BBs with the average of log2(days)=%.2f ages.", 
                   inst_ages, (float)module_ave_ages/WEIGHT_FAC);
     }
-    if ((use_libgit2_change || use_cmd_change) && !is_one_commit){
-      if (use_libgit2_change)
-        OKF("Using libgit2. Instrumented %u BBs with the average churn of %u churns.",
-                    inst_changes, module_ave_chanegs);
-      else
+    if (use_cmd_change && !is_one_commit){
         OKF("Using command line git. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
     } 
       
 
   }
-
-  if (repo != nullptr)
-    git_repository_free(repo);
-
-  git_libgit2_shutdown();
 
   return true;
 
