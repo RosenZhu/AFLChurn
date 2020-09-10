@@ -111,11 +111,6 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
-struct line_chns{
-    int first_diff;
-    std::map<unsigned int, unsigned int> line2changes_map;
-    std::set<unsigned int> old_changed_lines;
-};
 
 /* use popen() to execute git command */
 std::string execute_git_cmd (std::string directory, std::string str_cmd){
