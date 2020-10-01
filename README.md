@@ -23,12 +23,11 @@ We can choose one of the schemes or both of them.
 
 Install
 
-    cd /path/to/root/afl/dir
+    cd /path/to/root/aflchurn
     make clean all
     cd llvm_mode
     make clean all
 
-`LIBGIT_INC` and `LIBGIT_LIB` are used in llvm_mode/Makefile.
 
 
 ### About configure
@@ -57,7 +56,7 @@ power schedule
     -p average
 
 ### option -b
-Choose "age", "churn" or both. Default: both
+Choose "age" or "churn". Default: both
 
     -b age
     -b churn
