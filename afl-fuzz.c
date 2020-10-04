@@ -280,6 +280,8 @@ struct queue_entry {
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
          path_churn;                 /* Average number of churns of executed basic blocks */
 
+  u8* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
+
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
 
@@ -363,6 +365,109 @@ enum {
   /* 04 */ FAULT_NOINST,
   /* 05 */ FAULT_NOBITS
 };
+
+double get_log2days_age(){
+  double vage = 0.0;
+
+#ifdef WORD_SIZE_64
+
+  u64 *pAgeWt = (u64 *)(trace_bits + MAP_SIZE);
+  u64 *pAgeCnt = (u64 *)(trace_bits + MAP_SIZE + 8);
+  if ((*pAgeCnt) != 0){
+    vage = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
+  }
+
+#else
+
+  u32 *pAgeWt = (u32 *)(trace_bits + MAP_SIZE);
+  u32 *pAgeCnt = (u32 *)(trace_bits + MAP_SIZE + 4);
+  if ((*pAgeCnt) != 0){
+    vage = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
+  }
+
+#endif
+
+  return vage;
+}
+
+double get_num_churns(){
+  double vchurn = 0.0;
+
+#ifdef WORD_SIZE_64
+
+  u64 *pChurnWt = (u64 *)(trace_bits + MAP_SIZE + 16);
+  u64 *pChurnCnt = (u64 *)(trace_bits + MAP_SIZE + 24);
+  if ((*pChurnCnt) != 0)
+      vchurn = (double)(*pChurnWt) / (*pChurnCnt);
+
+#else
+
+  u32 *pChurnWt = (u32 *)(trace_bits + MAP_SIZE + 8);
+  u32 *pChurnCnt = (u32 *)(trace_bits + MAP_SIZE + 12);
+  if ((*pChurnCnt) != 0)
+      vchurn = (double)(*pChurnWt) / (*pChurnCnt);
+
+#endif
+
+  return vchurn;
+}
+
+double calculate_anneal_burst(double cur_age, double cur_churn){
+  double vburst = 0.0, rela_p_age, rela_p_churn;
+
+  if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) vburst = 1;
+  else {
+    // the smaller age gets higher factor
+    if (max_p_age == min_p_age) rela_p_age = 0;
+    else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
+    // the higher churn gets higher factor
+    if (min_p_churn == max_p_churn) rela_p_churn = 0;
+    else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
+    // burst_factor: (0,2)
+    vburst = rela_p_age + rela_p_churn;
+  }
+
+  return vburst;
+}
+
+void calculate_seed_byte_score(struct queue_entry* q, double seed_burst,
+                  s32 byte_start_pos, s32 byte_end_pos){
+  double cur_log2_age, cur_churn, cur_burst;
+  u32 end_pos, start_pos;
+  u8 num_neighbor_bytes = 4;
+
+  if (byte_start_pos >= q->len || byte_start_pos < 0) return;
+  
+  if (byte_end_pos >= q->len) end_pos = q->len - 1;
+  else end_pos = byte_end_pos;
+
+  /* consider neighbor bytes */
+  if ((end_pos + num_neighbor_bytes) >= q->len) end_pos = q->len;
+  else end_pos = end_pos + num_neighbor_bytes;
+  
+  if ((byte_start_pos - num_neighbor_bytes) < 0) start_pos = 0;
+  else start_pos = byte_start_pos - num_neighbor_bytes;
+
+  cur_log2_age = get_log2days_age();
+  cur_churn = get_num_churns();
+
+  cur_burst = calculate_anneal_burst(cur_log2_age, cur_churn);
+
+  if (cur_burst > seed_burst){ // larger burst gets higher score
+    for (u32 i = byte_start_pos; i <= end_pos; i++){
+      if (q->byte_score[i] < 255) // the largest score is 255
+          q->byte_score[i]++;
+    }
+  } else if(cur_burst < seed_burst){
+    for (u32 i = byte_start_pos; i <= end_pos; i++){
+      if (q->byte_score[i] > 1) // the minimum score is 1
+          q->byte_score[i]--;
+    }
+  }
+
+}
+
+
 
 
 /* Get unix time in milliseconds */
@@ -865,6 +970,7 @@ EXP_ST void destroy_queue(void) {
     n = q->next;
     ck_free(q->fname);
     ck_free(q->trace_mini);
+    ck_free(q->byte_score);
     ck_free(q);
     q = n;
 
@@ -2710,33 +2816,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->handicap    = handicap;
   q->cal_failed  = 0;
 
-#ifdef WORD_SIZE_64
+  q->path_age = get_log2days_age();
+  q->path_churn = get_num_churns();
 
-  u64 *pAgeWt = (u64 *)(trace_bits + MAP_SIZE);
-  u64 *pAgeCnt = (u64 *)(trace_bits + MAP_SIZE + 8);
-  if ((*pAgeCnt) != 0){
-    q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
-  }
-
-  u64 *pChurnWt = (u64 *)(trace_bits + MAP_SIZE + 16);
-  u64 *pChurnCnt = (u64 *)(trace_bits + MAP_SIZE + 24);
-  if ((*pChurnCnt) != 0)
-      q->path_churn = (double)(*pChurnWt) / (*pChurnCnt);
-
-#else
-
-  u32 *pAgeWt = (u32 *)(trace_bits + MAP_SIZE);
-  u32 *pAgeCnt = (u32 *)(trace_bits + MAP_SIZE + 4);
-  if ((*pAgeCnt) != 0){
-    q->path_age = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
-  }
-
-  u32 *pChurnWt = (u32 *)(trace_bits + MAP_SIZE + 8);
-  u32 *pChurnCnt = (u32 *)(trace_bits + MAP_SIZE + 12);
-  if ((*pChurnCnt) != 0)
-      q->path_churn = (double)(*pChurnWt) / (*pChurnCnt);
-
-#endif
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
@@ -4944,28 +5026,6 @@ static u32 calculate_score(struct queue_entry* q) {
 
   if (burst_factor == 0) burst_factor = 1;
 
-  // double age_factor, age_pow, churn_factor, churn_pow;
-  // if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
-  // else {
-  //   // the smaller age gets higher factor
-  //   if (max_p_age == min_p_age) age_factor = 0;
-  //   else{
-  //     rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
-  //     age_pow = rela_p_age * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-  //     // age_factor: (1/32, 32)
-  //     age_factor = pow(2, 10 * (age_pow - 0.5));
-  //   } 
-  //   // the higher change gets higher factor
-  //   if (min_p_churn == max_p_churn) churn_factor = 0;
-  //   else{
-  //     rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
-  //     churn_pow = rela_p_churn * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-  //     // churn_factor: (1/32, 32)
-  //     churn_factor = pow(2, 10 * (churn_pow - 0.5));
-  //   } 
-  //   burst_factor = age_factor + churn_factor;
-  // }
-
   show_factor = burst_factor;
 
   perf_score *= burst_factor;
@@ -5181,6 +5241,8 @@ static u8 fuzz_one(char** argv) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
+  double seed_burst;
+
 #ifdef IGNORE_FINDS
 
   /* In IGNORE_FINDS mode, skip any entries that weren't in the
@@ -5295,15 +5357,22 @@ static u8 fuzz_one(char** argv) {
 
     if (len != queue_cur->len) len = queue_cur->len;
 
+    if (!queue_cur->byte_score){
+      queue_cur->byte_score = ck_alloc(queue_cur->len);
+      memset(queue_cur->byte_score, 128, queue_cur->len);
+    }
+      
   }
 
   memcpy(out_buf, in_buf, len);
 
+  
   /*********************
    * PERFORMANCE SCORE *
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
+  seed_burst = calculate_anneal_burst(queue_cur->path_age, queue_cur->path_churn);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -5349,6 +5418,7 @@ static u8 fuzz_one(char** argv) {
     FLIP_BIT(out_buf, stage_cur);
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
 
@@ -5442,6 +5512,7 @@ static u8 fuzz_one(char** argv) {
     FLIP_BIT(out_buf, stage_cur + 1);
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5471,6 +5542,7 @@ static u8 fuzz_one(char** argv) {
     FLIP_BIT(out_buf, stage_cur + 3);
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -5523,6 +5595,7 @@ static u8 fuzz_one(char** argv) {
     out_buf[stage_cur] ^= 0xFF;
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
 
     /* We also use this stage to pull off a simple trick: we identify
        bytes that seem to have no effect on the current execution path
@@ -5601,6 +5674,7 @@ static u8 fuzz_one(char** argv) {
     *(u16*)(out_buf + i) ^= 0xFFFF;
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
     stage_cur++;
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
@@ -5638,6 +5712,7 @@ static u8 fuzz_one(char** argv) {
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+    calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
     stage_cur++;
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
@@ -5694,6 +5769,7 @@ skip_bitflip:
         out_buf[i] = orig + j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
         stage_cur++;
 
       } else stage_max--;
@@ -5706,6 +5782,7 @@ skip_bitflip:
         out_buf[i] = orig - j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
         stage_cur++;
 
       } else stage_max--;
@@ -5765,6 +5842,7 @@ skip_bitflip:
         *(u16*)(out_buf + i) = orig + j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
  
       } else stage_max--;
@@ -5775,6 +5853,7 @@ skip_bitflip:
         *(u16*)(out_buf + i) = orig - j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -5790,6 +5869,7 @@ skip_bitflip:
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) + j);
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -5800,6 +5880,7 @@ skip_bitflip:
         *(u16*)(out_buf + i) = SWAP16(SWAP16(orig) - j);
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -5858,6 +5939,7 @@ skip_bitflip:
         *(u32*)(out_buf + i) = orig + j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -5868,6 +5950,7 @@ skip_bitflip:
         *(u32*)(out_buf + i) = orig - j;
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -5882,6 +5965,7 @@ skip_bitflip:
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) + j);
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -5892,6 +5976,7 @@ skip_bitflip:
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) - j);
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -5951,6 +6036,7 @@ skip_arith:
       out_buf[i] = interesting_8[j];
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
 
       out_buf[i] = orig;
       stage_cur++;
@@ -6004,6 +6090,7 @@ skip_arith:
         *(u16*)(out_buf + i) = interesting_16[j];
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6017,6 +6104,7 @@ skip_arith:
 
         *(u16*)(out_buf + i) = SWAP16(interesting_16[j]);
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6073,6 +6161,7 @@ skip_arith:
         *(u32*)(out_buf + i) = interesting_32[j];
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6086,6 +6175,7 @@ skip_arith:
 
         *(u32*)(out_buf + i) = SWAP32(interesting_32[j]);
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+        calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6152,6 +6242,7 @@ skip_interest:
       memcpy(out_buf + i, extras[j].data, last_len);
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + last_len - 1);
 
       stage_cur++;
 
@@ -6199,6 +6290,7 @@ skip_interest:
         ck_free(ex_tmp);
         goto abandon_entry;
       }
+      calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + extras[j].len - 1);
 
       stage_cur++;
 
@@ -6252,6 +6344,7 @@ skip_user_extras:
       memcpy(out_buf + i, a_extras[j].data, last_len);
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
+      calculate_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + last_len - 1);
 
       stage_cur++;
 
@@ -6278,6 +6371,7 @@ skip_extras:
   /****************
    * RANDOM HAVOC *
    ****************/
+goto abandon_entry;
 
 havoc_stage:
 
@@ -7437,6 +7531,34 @@ EXP_ST void setup_dirs_fds(void) {
 
 }
 
+void plot_byte_score(){
+  u8* tmp;
+  s32 fd;
+  FILE* byte_file;
+  struct queue_entry *q = queue, *n;
+
+  tmp = alloc_printf("%s/byte_score", out_dir);
+  fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+
+  byte_file = fdopen(fd, "w");
+  if (!byte_file) PFATAL("fdopen() failed");
+
+  while (q) {
+
+    n = q->next;
+    for (int i=0; i< q->len; i++){
+      fprintf(byte_file, "%d, ", q->byte_score[i]);
+    }
+    fprintf(byte_file, "\n");
+    q = n;
+  }
+
+  fclose(byte_file);
+  
+}
+
 
 /* Setup the output file for fuzzed data, if not using -f. */
 
@@ -8357,6 +8479,10 @@ stop_fuzzing:
   }
 
   fclose(plot_file);
+
+  //plot byte score
+  plot_byte_score();
+
   destroy_queue();
   destroy_extras();
   ck_free(target_path);
