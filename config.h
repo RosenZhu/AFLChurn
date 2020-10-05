@@ -330,7 +330,8 @@
 
 
 /* Path weight. 8 bytes for ages, 8 bytes for block hit-counts of ages.
-   8 bytes for changes, 8 bytes for block hit-counts of changes. */
+   8 bytes for changes, 8 bytes for block hit-counts of changes. 
+   (Or 4 bytes for each in 32-bits system.) */
 #define WEIGHT_SHM         32
 
 /* Keep decimal of path weight */

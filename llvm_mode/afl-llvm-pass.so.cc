@@ -647,9 +647,10 @@ bool AFLCoverage::runOnModule(Module &M) {
                     git_no_found = 1;
                     is_one_commit = 1;
                     OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
-                  
+                    break;
                   }
-                  
+   
+                  if (!git_no_found) break;
                 }
                 
               }

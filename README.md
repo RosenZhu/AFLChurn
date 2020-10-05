@@ -47,7 +47,7 @@ e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 
 
 ## run fuzzing
 
-    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -- <file_path> [...parameters...]
+    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -e -- <file_path> [...parameters...]
 
 ### option -p
 power schedule
@@ -60,3 +60,8 @@ Choose "age" or "churn". Default: both
 
     -b age
     -b churn
+
+### option -e
+Byte score for mutation. 
+If `-e` is set, use the ant colony optimisation for mutation.
+Otherwise, use the original schemes from AFL.
