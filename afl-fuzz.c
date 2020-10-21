@@ -500,7 +500,8 @@ void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burs
   }
 }
 
-/* For deterministic stage. In deterministic stage, 
+/* This needs to be fast.
+For deterministic stage. In deterministic stage, 
       the scores will not gravitate to zero */
 void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
                   s32 byte_start_pos, s32 byte_end_pos){
@@ -533,19 +534,18 @@ void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
 
 /* expire old scores */
 void expire_old_score(struct queue_entry* q){
-  u32 frequency = 30; // the update frequency
-  float alpha = 0.9; // gravitate to 0
-
-  if (!(total_execs % frequency)){
+  
+  if (!(total_execs % ACO_FREQENCY)){
     if (q->byte_score){
       for (int i = 0; i < q->len; i++){
-        q->byte_score[i] *= alpha; // just drop the fractional part
+        q->byte_score[i] *= ACO_COEF; // just drop the fractional part
       }
     }
   }
 }
 
-/* select the byte according to byte score */
+/* This needs to be fast.
+select the byte according to byte score */
 u32 select_byte(struct queue_entry* q, s32 input_len){
   u32 sum_score = 0, rand_num, selected_byte,
       cur_len, sum_range = 0;
@@ -567,7 +567,7 @@ u32 select_byte(struct queue_entry* q, s32 input_len){
   // if all the scores are -128 or 127
   if (!sum_score || (sum_score == 255 * cur_len)) return selected_byte;
 
-  rand_num = UR(sum_score); // get the random number
+  rand_num = UR(sum_score + 1); // get the random number
 
   /* Select the byte that the random number falls in */
   for (int j = 0; j < cur_len; j++){
@@ -597,15 +597,15 @@ u32 URfitness(struct queue_entry* q, s32 input_len){
 void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem, 
             u8* cur_input_mem, u32 cur_input_len, double seed_burst){
   
-  u32 remainder, divisor, tmp_len;
+  u32 rem, div, tmp_len;
   u8 group_size = 4;
   double cur_log2_age, cur_churn, cur_burst;
 
   if (q->len > cur_input_len) tmp_len = cur_input_len;
   else tmp_len = q->len;
 
-  remainder = tmp_len % group_size;
-  divisor = (tmp_len - remainder) / group_size;
+  rem = tmp_len % group_size;
+  div = (tmp_len - rem) / group_size;
 
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
@@ -614,7 +614,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
 
   /* if one byte in a group with the size group_size changes the fitness,
       other bytes in the group have the same change. */
-  for (int i = 0; i < divisor; i++){
+  for (int i = 0; i < div; i++){
     // when two group bytes are different, update fitness
     if (memcmp(seed_mem + i * group_size, 
               cur_input_mem + i * group_size, group_size)){
@@ -626,11 +626,11 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   }
 
   /* for the remainder bytes */
-  if (memcmp(seed_mem + divisor * group_size, 
-              cur_input_mem + divisor * group_size, remainder)){
+  if (memcmp(seed_mem + div * group_size, 
+              cur_input_mem + div * group_size, rem)){
 
     update_byte_score(q, seed_burst, cur_burst, 
-                divisor * group_size, divisor * group_size + remainder - 1);
+                div * group_size, div * group_size + rem - 1);
   }
 
 }

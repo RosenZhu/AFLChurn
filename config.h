@@ -328,6 +328,10 @@
 #define MAP_SIZE_POW2       16
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
+/* ACO: update frequency and coefficient */
+#define ACO_FREQENCY       30
+#define ACO_COEF           0.9
+
 
 /* Path weight. 8 bytes for ages, 8 bytes for block hit-counts of ages.
    8 bytes for changes, 8 bytes for block hit-counts of changes. 
