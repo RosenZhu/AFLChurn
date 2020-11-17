@@ -89,7 +89,8 @@
 #  define EXP_ST static
 #endif /* ^AFL_LIB */
 
-/********************    New Variables    *********************/
+
+/********************    AFLChurn Variables    *********************/
 
 double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_age = 50.0,               /* minimun path age among all seeds */
@@ -106,6 +107,15 @@ static u8 use_burst_age = 1,    /* Use the age information */
          use_burst_churn = 1;  /* Use the churn information */
 
 u8 use_byte_fitness = 0;  /* use byte score to select bytes; default: not use */
+
+static u32* alias_table;            /* alias method: alias table  */
+static double* alias_probability;   /* alias probability of a seed */
+u8 *prob_norm_buf,                  /* normed probability of seeds */
+   *out_scratch_buf,                /* alias probabilities that are larger than 1 */
+   *in_scratch_buf;                 /* alias probabilities that are less than 1 */
+
+u8 burst_seed_selection = 0;        /* Use alias method to select next seed based on burst */
+
 
 /********************    AFL Variables    *********************/
 
@@ -279,7 +289,8 @@ struct queue_entry {
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
-         path_churn;                 /* Average number of churns of executed basic blocks */
+         path_churn,                 /* Average number of churns of executed basic blocks */
+         burst_score;                 /* Burst score of a seed */
 
   signed char* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
 
@@ -954,6 +965,106 @@ static u8* DTD(u64 cur_ms, u64 event_ms) {
   return tmp;
 
 }
+
+/* alias method. Similar as afl++:
+  https://github.com/AFLplusplus/AFLplusplus/blob/868cb61ea6a2949e80e8a94fe7b19229bebecd10/src/afl-fuzz-queue.c
+
+*/
+void destroy_alias_buf(void){
+  ck_free(prob_norm_buf);
+  ck_free(out_scratch_buf);
+  ck_free(in_scratch_buf);
+
+  ck_free(alias_table);
+  ck_free(alias_probability);
+}
+/* select next queue entry based on alias probability of churns */
+static inline u32 select_next_queue_entry(void){
+  // randomly select an aliased seed
+  u32 s = UR(queued_paths);
+  // generate the next percent
+  double p = UR(100)/100;
+  return (p < alias_probability[s] ? s : alias_table[s]);
+}
+
+void create_alias_table(void){
+
+  u32 n = queued_paths, i = 0, a, g;
+
+  alias_table = (u32 *)ck_realloc((void *)alias_table, n * sizeof(u32));
+  alias_probability = (double *)ck_realloc((void *)alias_probability, n * sizeof(double));
+
+  prob_norm_buf = (u8 *)ck_realloc((void *)prob_norm_buf, n * sizeof(double));
+  out_scratch_buf = (u8 *)ck_realloc((void *)out_scratch_buf, n * sizeof(u32));
+  in_scratch_buf = (u8 *)ck_realloc((void *)in_scratch_buf, n * sizeof(u32));
+  double *P = (double *)prob_norm_buf;
+  int *   S = (u32 *)out_scratch_buf;
+  int *   L = (u32 *)in_scratch_buf;
+
+  if (!P || !S || !L) { FATAL("could not aquire memory for alias table"); }
+  memset((void *)alias_table, 0, n * sizeof(u32));
+  memset((void *)alias_probability, 0, n * sizeof(double));
+
+  double sum = 0;
+
+  struct queue_entry *q = queue;
+  for (i = 0; i < n; i++) {
+
+    q->burst_score = calculate_fitness_burst(q->path_age, q->path_churn);
+    sum += q->burst_score;
+    q = q->next;
+
+  }
+
+  q = queue;
+  for (i = 0; i < n; i++) {
+    P[i] = (q->burst_score * n) / sum;
+    q = q->next;
+  }
+
+  int nS = 0, nL = 0, s;
+  for (s = (s32)n - 1; s >= 0; --s) {
+
+    if (P[s] < 1) {
+
+      S[nS++] = s;
+
+    } else {
+
+      L[nL++] = s;
+
+    }
+
+  }
+
+  while (nS && nL) {
+
+    a = S[--nS];
+    g = L[--nL];
+    alias_probability[a] = P[a];
+    alias_table[a] = g;
+    P[g] = P[g] + P[a] - 1;
+    if (P[g] < 1) {
+
+      S[nS++] = g;
+
+    } else {
+
+      L[nL++] = g;
+
+    }
+
+  }
+
+  while (nL)
+    alias_probability[L[--nL]] = 1;
+
+  while (nS)
+    alias_probability[S[--nS]] = 1;
+
+
+}
+
 
 
 /* Mark deterministic checks as done for a particular queue entry. We use the
@@ -8231,8 +8342,8 @@ static void save_cmdline(u32 argc, char** argv) {
 int main(int argc, char** argv) {
 
   s32 opt;
-  u64 prev_queued = 0;
-  u32 sync_interval_cnt = 0, seek_to;
+  u64 prev_queued = 0, prev_queued_alias = 0;
+  u32 sync_interval_cnt = 0, seek_to, tmp_id;
   u8  *extras_dir = 0;
   u8  mem_limit_given = 0;
   u8  exit_1 = !!getenv("AFL_BENCH_JUST_ONE");
@@ -8248,7 +8359,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:e")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ")) > 0)
 
     switch (opt) {
 
@@ -8437,6 +8548,10 @@ int main(int argc, char** argv) {
         use_byte_fitness = 1;
         break;
 
+      case 'Z':
+        burst_seed_selection = 1;
+        break;
+
       default:
 
         usage(argv[0]);
@@ -8484,6 +8599,7 @@ int main(int argc, char** argv) {
   if (use_burst_churn) OKF ("Using 'churn' during fuzzing.");
   if (use_burst_age) OKF ("Using 'age' during fuzzing.");
   if (use_byte_fitness) OKF ("Using Ant Colony Optimization.");
+  if (burst_seed_selection) OKF("Select next seeds based on churns.");
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
@@ -8611,8 +8727,30 @@ int main(int argc, char** argv) {
 
     if (stop_soon) break;
 
-    queue_cur = queue_cur->next;
-    current_entry++;
+    if (likely(burst_seed_selection)){
+      if (unlikely(prev_queued_alias < queued_paths)){
+        prev_queued_alias = queued_paths;
+        create_alias_table();
+      }
+
+      tmp_id = current_entry = select_next_queue_entry();
+      queue_cur = queue;
+      if (tmp_id < 99){
+        while (tmp_id--) queue_cur = queue_cur->next;
+      } else{
+        tmp_id++;
+        while (tmp_id >= 100){
+          queue_cur = queue_cur->next_100; 
+          tmp_id -= 100; 
+        }
+        while (tmp_id--) queue_cur = queue_cur->next;
+      }
+      
+    } else {
+      queue_cur = queue_cur->next;
+      current_entry++;
+    }
+    
 
   }
 
@@ -8655,6 +8793,7 @@ stop_fuzzing:
 
   destroy_queue();
   destroy_extras();
+  destroy_alias_buf();
   ck_free(target_path);
   ck_free(sync_id);
 

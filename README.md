@@ -65,3 +65,6 @@ Choose "age" or "churn". Default: both
 Byte score for mutation. 
 If `-e` is set, use the ant colony optimisation for mutation.
 Otherwise, use the original schemes from AFL.
+
+### option -Z
+If `-Z` is set, use alias method to select the next seed based on churns information.
