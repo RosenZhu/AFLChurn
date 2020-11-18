@@ -111,8 +111,8 @@ u8 use_byte_fitness = 0;  /* use byte score to select bytes; default: not use */
 static u32* alias_table;            /* alias method: alias table  */
 static double* alias_probability;   /* alias probability of a seed */
 u8 *prob_norm_buf,                  /* normed probability of seeds */
-   *out_scratch_buf,                /* alias probabilities that are larger than 1 */
-   *in_scratch_buf;                 /* alias probabilities that are less than 1 */
+   *out_scratch_buf,                /* kicked out of analysis queue during creating alias table */
+   *in_scratch_buf;                 /* kept in analysis queue during creating alias table */
 
 u8 burst_seed_selection = 0;        /* Use alias method to select next seed based on burst */
 
@@ -1010,7 +1010,6 @@ void create_alias_table(void){
   struct queue_entry *q = queue;
   for (i = 0; i < n; i++) {
 
-    q->burst_score = calculate_fitness_burst(q->path_age, q->path_churn);
     sum += q->burst_score;
     q = q->next;
 
@@ -1160,6 +1159,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->times_selected = 0;
   q->path_age  = 0.0;
   q->path_churn  = 0.0;
+  q->burst_score = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -3046,7 +3046,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   q->path_age = get_log2days_age();
   q->path_churn = get_num_churns();
-
+  q->burst_score = calculate_fitness_burst(q->path_age, q->path_churn);
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
