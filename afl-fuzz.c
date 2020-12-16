@@ -290,7 +290,7 @@ struct queue_entry {
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
          path_churn,                 /* Average number of churns of executed basic blocks */
-         burst_score;                 /* Burst score of a seed */
+         alias_score;                 /* Alias score of a seed */
 
   signed char* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
 
@@ -978,7 +978,9 @@ void destroy_alias_buf(void){
   ck_free(alias_table);
   ck_free(alias_probability);
 }
-/* select next queue entry based on alias probability of churns */
+/* select next queue entry based on alias probability of churns
+ ID range: 0 ~ queued_paths -1
+ */
 static inline u32 select_next_queue_entry(void){
   // randomly select an aliased seed
   u32 s = UR(queued_paths);
@@ -1010,14 +1012,16 @@ void create_alias_table(void){
   struct queue_entry *q = queue;
   for (i = 0; i < n; i++) {
 
-    sum += q->burst_score;
+    sum += q->alias_score;
     q = q->next;
 
   }
 
+  if (sum == 0) return;
+
   q = queue;
   for (i = 0; i < n; i++) {
-    P[i] = (q->burst_score * n) / sum;
+    P[i] = (q->alias_score * n) / sum;
     q = q->next;
   }
 
@@ -1159,7 +1163,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->times_selected = 0;
   q->path_age  = 0.0;
   q->path_churn  = 0.0;
-  q->burst_score = 0.0;
+  q->alias_score = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -1632,14 +1636,6 @@ static void update_bitmap_score(struct queue_entry* q) {
          /* Faster-executing or smaller test cases are favored. */
 
         if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
-        
-        // TODO:
-        // if (R(100) < 30){ // give smaller-weight seeds a chance
-        //   if ((q->path_age > top_rated[i]->path_age) &&
-        //       (fav_factor > top_rated[i]->exec_us * top_rated[i]->len)) continue;
-        // } else{
-        //   if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
-        // }
 
          /* Looks like we're going to win. Decrease ref count for the
             previous winner, discard its trace_bits[] if necessary. */
@@ -2945,6 +2941,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   u32 use_tmout = exec_tmout;
   u8* old_sn = stage_name;
 
+  u32 avg_exec_us;
+
   /* Be a bit more generous about timeouts when resuming sessions, or when
      trying to calibrate already-added finds. This helps avoid trouble due
      to intermittent latency. */
@@ -3046,7 +3044,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   q->path_age = get_log2days_age();
   q->path_churn = get_num_churns();
-  q->burst_score = calculate_fitness_burst(q->path_age, q->path_churn);
+  // smaller execution time indicates larger score
+  avg_exec_us = total_cal_us / total_cal_cycles;
+  q->alias_score
+      = calculate_fitness_burst(q->path_age, q->path_churn) * (avg_exec_us / q->exec_us);
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
