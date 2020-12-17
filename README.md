@@ -47,7 +47,7 @@ e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 
 
 ## run fuzzing
 
-    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -e -- <file_path> [...parameters...]
+    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -e -Z 6 -- <file_path> [...parameters...]
 
 ### option -p
 power schedule. Default: anneal.
@@ -68,3 +68,22 @@ Otherwise, use the original schemes from AFL.
 
 ### option -Z
 If `-Z` is set, use alias method to select the next seed based on churns information.
+
+Select the next seed based on the information of exec time, input length or bitmap size.
+
+    -Z 0
+    -Z 1
+    ...
+
+Meaning:
+
+    enum{
+    /* 00 */ ALIAS_TIME,
+    /* 01 */ ALIAS_LENGTH,
+    /* 02 */ ALIAS_BITMAP,
+    /* 03 */ ALIAS_TIME_LENGTH,
+    /* 04 */ ALIAS_TIME_BITMAP,
+    /* 05 */ ALIAS_LENGTH_BITMAP,
+    /* 06 */ ALIAS_TIME_LENGTH_BITMAP
+    };
+

@@ -91,6 +91,25 @@
 
 
 /********************    AFLChurn Variables    *********************/
+static u8 schedule = 0;
+enum{
+  /* 00 */ ANNEAL,    /* default */
+  /* 01 */ AVERAGE
+};
+
+/* the info used for next seed selection: 
+      exec time, input length and bitmap size
+*/
+static u8 alias_info = 6; //default
+enum{
+  /* 00 */ ALIAS_TIME,
+  /* 01 */ ALIAS_LENGTH,
+  /* 02 */ ALIAS_BITMAP,
+  /* 03 */ ALIAS_TIME_LENGTH,
+  /* 04 */ ALIAS_TIME_BITMAP,
+  /* 05 */ ALIAS_LENGTH_BITMAP,
+  /* 06 */ ALIAS_TIME_LENGTH_BITMAP
+};
 
 double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_age = 50.0,               /* minimun path age among all seeds */
@@ -116,6 +135,7 @@ u8 *prob_norm_buf,                  /* normed probability of seeds */
 
 u8 burst_seed_selection = 0;        /* Use alias method to select next seed based on burst */
 
+u64 total_input_len = 0;            /* Total length of all seeds */
 
 /********************    AFL Variables    *********************/
 
@@ -266,6 +286,7 @@ static s32 cpu_aff = -1;       	      /* Selected CPU core                */
 #endif /* HAVE_AFFINITY */
 
 static FILE* plot_file;               /* Gnuplot output file              */
+static FILE* churn_file;              /* plot churn values to file  */
 
 struct queue_entry {
 
@@ -290,7 +311,8 @@ struct queue_entry {
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
          path_churn,                 /* Average number of churns of executed basic blocks */
-         alias_score;                 /* Alias score of a seed */
+         churn_score,                 /* Score of churn and age */
+         alias_score;                 /* Alias score of a seed; For alias method */
 
   signed char* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
 
@@ -331,11 +353,6 @@ static s8  interesting_8[]  = { INTERESTING_8 };
 static s16 interesting_16[] = { INTERESTING_8, INTERESTING_16 };
 static s32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
 
-static u8 schedule = 0;
-enum{
-  /* 00 */ ANNEAL,    /* default */
-  /* 01 */ AVERAGE
-};
 
 /* Fuzzing stages */
 
@@ -484,9 +501,11 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
     // the smaller age gets higher factor
     if (max_p_age == min_p_age) rela_p_age = 0;
     else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
+    if (rela_p_age < 0) rela_p_age = 0;
     // the higher churn gets higher factor
     if (min_p_churn == max_p_churn) rela_p_churn = 0;
     else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
+    if (rela_p_churn < 0) rela_p_churn = 0;
     // burst_factor: (0,2)
     vburst = rela_p_age + rela_p_churn;
   }
@@ -1164,6 +1183,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->path_age  = 0.0;
   q->path_churn  = 0.0;
   q->alias_score = 0.0;
+  q->churn_score = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -2941,8 +2961,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   u32 use_tmout = exec_tmout;
   u8* old_sn = stage_name;
 
-  u32 avg_exec_us;
-
   /* Be a bit more generous about timeouts when resuming sessions, or when
      trying to calibrate already-added finds. This helps avoid trouble due
      to intermittent latency. */
@@ -3044,10 +3062,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   q->path_age = get_log2days_age();
   q->path_churn = get_num_churns();
-  // smaller execution time indicates larger score
-  avg_exec_us = total_cal_us / total_cal_cycles;
-  q->alias_score
-      = calculate_fitness_burst(q->path_age, q->path_churn) * (avg_exec_us / q->exec_us);
+  fprintf(churn_file, "seed, %.6f, %.6f\n", q->path_churn, q->path_age);
+  fflush(churn_file);
+  q->churn_score = calculate_fitness_burst(q->path_age, q->path_churn);
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
@@ -3071,6 +3088,51 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   total_bitmap_entries++;
 
   update_bitmap_score(q);
+
+  /* Calculate alias score */
+  
+  if (burst_seed_selection){
+    total_input_len += q->len;
+
+      // smaller execution time indicates larger score
+    u32 avg_exec_us = total_cal_us / total_cal_cycles;
+    u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
+    u32 avg_input_len = total_input_len / queued_paths;
+
+    double rela_time = (double)avg_exec_us / q->exec_us,
+            rela_length = (double)avg_input_len / q->len,  // TODO: after trim_case()?
+            rela_bitmap = (double)q->bitmap_size / avg_bitmap_size;
+    q->alias_score = q->churn_score;
+
+    switch (alias_info){
+      case ALIAS_TIME:
+        q->alias_score *= rela_time;
+        break;
+      case ALIAS_LENGTH:
+        q->alias_score *= rela_length;
+        break;
+      case ALIAS_BITMAP:
+        q->alias_score *= rela_bitmap;
+        break;
+      case ALIAS_TIME_LENGTH:
+        q->alias_score *= (rela_time * rela_length);
+        break;
+      case ALIAS_TIME_BITMAP:
+        q->alias_score *= (rela_time * rela_bitmap);
+        break;
+      case ALIAS_LENGTH_BITMAP:
+        q->alias_score *= (rela_length * rela_bitmap);
+        break;
+      case ALIAS_TIME_LENGTH_BITMAP:
+        q->alias_score *= (rela_time * rela_length * rela_bitmap);
+        break;
+      default:
+        q->alias_score *= (rela_time * rela_length * rela_bitmap);
+
+    }
+
+  }
+
 
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
@@ -3704,6 +3766,9 @@ keep_as_crash:
 
       fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
                         unique_crashes, kill_signal, describe_op(0));
+
+      fprintf(churn_file, "crash, %.6f, %.6f\n", get_num_churns(), get_log2days_age());
+      fflush(churn_file);
 
 #else
 
@@ -5607,7 +5672,7 @@ static u8 fuzz_one(char** argv) {
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
-  seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn);
+  seed_burst = queue_cur->churn_score;
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -7803,6 +7868,16 @@ EXP_ST void setup_dirs_fds(void) {
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
 
+  /* file for the churn values */
+  tmp = alloc_printf("%s/churn_values", out_dir);
+  fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+  churn_file = fdopen(fd, "w");
+  if (!churn_file) PFATAL("fdopen churn file failed");
+  // type: seed, crash
+  fprintf(churn_file, "# type, num_churns, log2(days)\n");
+
 }
 
 void plot_byte_score(){
@@ -8360,7 +8435,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ:")) > 0)
 
     switch (opt) {
 
@@ -8549,8 +8624,24 @@ int main(int argc, char** argv) {
         use_byte_fitness = 1;
         break;
 
-      case 'Z':
+      case 'Z':{
         burst_seed_selection = 1;
+        int selection = 8;
+        if (sscanf(optarg, "%d", &selection) < 1) PFATAL("Bad syntax for -Z");
+        switch(selection){
+          case 0: alias_info = ALIAS_TIME; break;
+          case 1: alias_info = ALIAS_LENGTH; break;
+          case 2: alias_info = ALIAS_BITMAP; break;
+          case 3: alias_info = ALIAS_TIME_LENGTH; break;
+          case 4: alias_info = ALIAS_TIME_BITMAP; break;
+          case 5: alias_info = ALIAS_LENGTH_BITMAP; break;
+          case 6: alias_info = ALIAS_TIME_LENGTH_BITMAP; break;
+          
+          default: PFATAL("Unsupported value for -Z");
+
+        }
+
+      }
         break;
 
       default:
@@ -8600,7 +8691,7 @@ int main(int argc, char** argv) {
   if (use_burst_churn) OKF ("Using 'churn' during fuzzing.");
   if (use_burst_age) OKF ("Using 'age' during fuzzing.");
   if (use_byte_fitness) OKF ("Using Ant Colony Optimization.");
-  if (burst_seed_selection) OKF("Select next seeds based on churns.");
+  if (burst_seed_selection) OKF("Select next seeds based on churns: Scheme %d", alias_info);
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
@@ -8788,9 +8879,11 @@ stop_fuzzing:
   }
 
   fclose(plot_file);
+  fclose(churn_file);
 
   // //plot byte score
   // plot_byte_score();
+
 
   destroy_queue();
   destroy_extras();
