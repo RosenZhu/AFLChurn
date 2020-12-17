@@ -311,7 +311,6 @@ struct queue_entry {
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
          path_churn,                 /* Average number of churns of executed basic blocks */
-         churn_score,                 /* Score of churn and age */
          alias_score;                 /* Alias score of a seed; For alias method */
 
   signed char* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
@@ -493,19 +492,25 @@ double get_num_churns(){
 }
 
 /* Fitness for changing the score of each byte */
-double calculate_fitness_burst(double cur_age, double cur_churn){
+double calculate_fitness_burst(double cur_age, double cur_churn,
+                                double *norm_age, double *norm_churn){
   double vburst = 0.0, rela_p_age, rela_p_churn;
 
-  if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) vburst = 1;
-  else {
+  if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)){
+    vburst = 1;
+    *norm_age = 0.0;
+    *norm_churn = 0.0;
+  } else {
     // the smaller age gets higher factor
     if (max_p_age == min_p_age) rela_p_age = 0;
     else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
     if (rela_p_age < 0) rela_p_age = 0;
+    *norm_age = rela_p_age;
     // the higher churn gets higher factor
     if (min_p_churn == max_p_churn) rela_p_churn = 0;
     else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
     if (rela_p_churn < 0) rela_p_churn = 0;
+    *norm_churn = rela_p_churn;
     // burst_factor: (0,2)
     vburst = rela_p_age + rela_p_churn;
   }
@@ -535,7 +540,7 @@ For deterministic stage. In deterministic stage,
       the scores will not gravitate to zero */
 void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
                   s32 byte_start_pos, s32 byte_end_pos){
-  double cur_log2_age, cur_churn, cur_burst;
+  double cur_log2_age, cur_churn, cur_burst, norm_age = 0.0, norm_churn = 0.0;
   u32 end_pos, start_pos;
   u8 num_neighbor_bytes = 0;
 
@@ -556,7 +561,7 @@ void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
+  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn, &norm_age, &norm_churn);
 
   update_byte_score(q, seed_burst, cur_burst, start_pos, end_pos);
 
@@ -629,7 +634,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   
   u32 rem, div, tmp_len;
   u8 group_size = 4;
-  double cur_log2_age, cur_churn, cur_burst;
+  double cur_log2_age, cur_churn, cur_burst, norm_age = 0.0, norm_churn = 0.0;
 
   if (q->len > cur_input_len) tmp_len = cur_input_len;
   else tmp_len = q->len;
@@ -640,7 +645,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
+  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn, &norm_age, &norm_churn);
 
   /* if one byte in a group with the size group_size changes the fitness,
       other bytes in the group have the same change. */
@@ -1026,10 +1031,56 @@ void create_alias_table(void){
   memset((void *)alias_table, 0, n * sizeof(u32));
   memset((void *)alias_probability, 0, n * sizeof(double));
 
-  double sum = 0;
+  double sum = 0, norm_age = 0.0, norm_churn = 0.0;
+  // smaller execution time indicates larger score
+  u32 avg_exec_us = total_cal_us / total_cal_cycles;
+  u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
+  u32 avg_input_len = total_input_len / queued_paths;
+
+  double rela_time,
+          rela_length,  // TODO: after trim_case()?
+          rela_bitmap;
 
   struct queue_entry *q = queue;
   for (i = 0; i < n; i++) {
+    
+    /* Calculate alias score */
+    if (q->cal_failed){
+      q->alias_score = 0;
+
+    } else {
+      q->alias_score 
+        = calculate_fitness_burst(q->path_age, q->path_churn, &norm_age, &norm_churn);
+      rela_time = (double)avg_exec_us / q->exec_us;
+      rela_length = (double)avg_input_len / q->len;  // TODO: after trim_case()?
+      rela_bitmap = (double)q->bitmap_size / avg_bitmap_size;
+
+      switch (alias_info){
+        case ALIAS_TIME:
+          q->alias_score *= rela_time;
+          break;
+        case ALIAS_LENGTH:
+          q->alias_score *= rela_length;
+          break;
+        case ALIAS_BITMAP:
+          q->alias_score *= rela_bitmap;
+          break;
+        case ALIAS_TIME_LENGTH:
+          q->alias_score *= (rela_time * rela_length);
+          break;
+        case ALIAS_TIME_BITMAP:
+          q->alias_score *= (rela_time * rela_bitmap);
+          break;
+        case ALIAS_LENGTH_BITMAP:
+          q->alias_score *= (rela_length * rela_bitmap);
+          break;
+        case ALIAS_TIME_LENGTH_BITMAP:
+          q->alias_score *= (rela_time * rela_length * rela_bitmap);
+          break;
+        default:
+          q->alias_score *= (rela_time * rela_length * rela_bitmap);
+      }
+    }
 
     sum += q->alias_score;
     q = q->next;
@@ -1183,7 +1234,6 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->path_age  = 0.0;
   q->path_churn  = 0.0;
   q->alias_score = 0.0;
-  q->churn_score = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -3062,9 +3112,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   q->path_age = get_log2days_age();
   q->path_churn = get_num_churns();
-  fprintf(churn_file, "seed, %.6f, %.6f\n", q->path_churn, q->path_age);
-  fflush(churn_file);
-  q->churn_score = calculate_fitness_burst(q->path_age, q->path_churn);
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
@@ -3089,50 +3136,12 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   update_bitmap_score(q);
 
-  /* Calculate alias score */
-  
-  if (burst_seed_selection){
-    total_input_len += q->len;
+  double norm_age = 0.0, norm_churn = 0.0;
+  calculate_fitness_burst(q->path_age, q->path_churn, &norm_age, &norm_churn);
+  fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, norm_churn, norm_age);
+  fflush(churn_file);
 
-      // smaller execution time indicates larger score
-    u32 avg_exec_us = total_cal_us / total_cal_cycles;
-    u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
-    u32 avg_input_len = total_input_len / queued_paths;
-
-    double rela_time = (double)avg_exec_us / q->exec_us,
-            rela_length = (double)avg_input_len / q->len,  // TODO: after trim_case()?
-            rela_bitmap = (double)q->bitmap_size / avg_bitmap_size;
-    q->alias_score = q->churn_score;
-
-    switch (alias_info){
-      case ALIAS_TIME:
-        q->alias_score *= rela_time;
-        break;
-      case ALIAS_LENGTH:
-        q->alias_score *= rela_length;
-        break;
-      case ALIAS_BITMAP:
-        q->alias_score *= rela_bitmap;
-        break;
-      case ALIAS_TIME_LENGTH:
-        q->alias_score *= (rela_time * rela_length);
-        break;
-      case ALIAS_TIME_BITMAP:
-        q->alias_score *= (rela_time * rela_bitmap);
-        break;
-      case ALIAS_LENGTH_BITMAP:
-        q->alias_score *= (rela_length * rela_bitmap);
-        break;
-      case ALIAS_TIME_LENGTH_BITMAP:
-        q->alias_score *= (rela_time * rela_length * rela_bitmap);
-        break;
-      default:
-        q->alias_score *= (rela_time * rela_length * rela_bitmap);
-
-    }
-
-  }
-
+  total_input_len += q->len;
 
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
@@ -3623,6 +3632,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
+  double norm_age = 0.0, norm_churn = 0.0, crash_churn, crash_age;
 
   if (fault == crash_mode) {
 
@@ -3766,8 +3776,11 @@ keep_as_crash:
 
       fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
                         unique_crashes, kill_signal, describe_op(0));
-
-      fprintf(churn_file, "crash, %.6f, %.6f\n", get_num_churns(), get_log2days_age());
+      
+      crash_churn = get_num_churns();
+      crash_age = get_log2days_age();
+      calculate_fitness_burst(crash_age, crash_churn, &norm_age, &norm_churn);
+      fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, norm_churn, norm_age);
       fflush(churn_file);
 
 #else
@@ -5672,7 +5685,8 @@ static u8 fuzz_one(char** argv) {
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
-  seed_burst = queue_cur->churn_score;
+  double norm_age = 0.0, norm_churn = 0.0;
+  seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn, &norm_age, &norm_churn);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -7876,7 +7890,7 @@ EXP_ST void setup_dirs_fds(void) {
   churn_file = fdopen(fd, "w");
   if (!churn_file) PFATAL("fdopen churn file failed");
   // type: seed, crash
-  fprintf(churn_file, "# type, num_churns, log2(days)\n");
+  fprintf(churn_file, "# type, num_churns, log2(days), norm_num_churns, norm_log2days\n");
 
 }
 
