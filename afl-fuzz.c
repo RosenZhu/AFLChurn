@@ -137,6 +137,8 @@ u8 burst_seed_selection = 0;        /* Use alias method to select next seed base
 
 u64 total_input_len = 0;            /* Total length of all seeds */
 
+double show_norm_churn = 0, show_norm_age = 0;
+
 /********************    AFL Variables    *********************/
 
 /* Lots of globals, but mostly for the status UI and other things where it
@@ -492,25 +494,24 @@ double get_num_churns(){
 }
 
 /* Fitness for changing the score of each byte */
-double calculate_fitness_burst(double cur_age, double cur_churn,
-                                double *norm_age, double *norm_churn){
+double calculate_fitness_burst(double cur_age, double cur_churn){
   double vburst = 0.0, rela_p_age, rela_p_churn;
 
   if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)){
     vburst = 1;
-    *norm_age = 0.0;
-    *norm_churn = 0.0;
+    show_norm_age = 0.0;
+    show_norm_churn = 0.0;
   } else {
     // the smaller age gets higher factor
     if (max_p_age == min_p_age) rela_p_age = 0;
     else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
     if (rela_p_age < 0) rela_p_age = 0;
-    *norm_age = rela_p_age;
+    show_norm_age = rela_p_age;
     // the higher churn gets higher factor
     if (min_p_churn == max_p_churn) rela_p_churn = 0;
     else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
     if (rela_p_churn < 0) rela_p_churn = 0;
-    *norm_churn = rela_p_churn;
+    show_norm_churn = rela_p_churn;
     // burst_factor: (0,2)
     vburst = rela_p_age + rela_p_churn;
   }
@@ -540,7 +541,7 @@ For deterministic stage. In deterministic stage,
       the scores will not gravitate to zero */
 void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
                   s32 byte_start_pos, s32 byte_end_pos){
-  double cur_log2_age, cur_churn, cur_burst, norm_age = 0.0, norm_churn = 0.0;
+  double cur_log2_age, cur_churn, cur_burst;
   u32 end_pos, start_pos;
   u8 num_neighbor_bytes = 0;
 
@@ -561,7 +562,7 @@ void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn, &norm_age, &norm_churn);
+  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
   update_byte_score(q, seed_burst, cur_burst, start_pos, end_pos);
 
@@ -634,7 +635,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   
   u32 rem, div, tmp_len;
   u8 group_size = 4;
-  double cur_log2_age, cur_churn, cur_burst, norm_age = 0.0, norm_churn = 0.0;
+  double cur_log2_age, cur_churn, cur_burst;
 
   if (q->len > cur_input_len) tmp_len = cur_input_len;
   else tmp_len = q->len;
@@ -645,7 +646,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn, &norm_age, &norm_churn);
+  cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
   /* if one byte in a group with the size group_size changes the fitness,
       other bytes in the group have the same change. */
@@ -1031,7 +1032,7 @@ void create_alias_table(void){
   memset((void *)alias_table, 0, n * sizeof(u32));
   memset((void *)alias_probability, 0, n * sizeof(double));
 
-  double sum = 0, norm_age = 0.0, norm_churn = 0.0;
+  double sum = 0;
   // smaller execution time indicates larger score
   u32 avg_exec_us = total_cal_us / total_cal_cycles;
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
@@ -1050,7 +1051,7 @@ void create_alias_table(void){
 
     } else {
       q->alias_score 
-        = calculate_fitness_burst(q->path_age, q->path_churn, &norm_age, &norm_churn);
+        = calculate_fitness_burst(q->path_age, q->path_churn);
       rela_time = (double)avg_exec_us / q->exec_us;
       rela_length = (double)avg_input_len / q->len;  // TODO: after trim_case()?
       rela_bitmap = (double)q->bitmap_size / avg_bitmap_size;
@@ -3136,9 +3137,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   update_bitmap_score(q);
 
-  double norm_age = 0.0, norm_churn = 0.0;
-  calculate_fitness_burst(q->path_age, q->path_churn, &norm_age, &norm_churn);
-  fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, norm_churn, norm_age);
+  
+  calculate_fitness_burst(q->path_age, q->path_churn);
+  fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, show_norm_churn, show_norm_age);
   fflush(churn_file);
 
   total_input_len += q->len;
@@ -3632,7 +3633,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
-  double norm_age = 0.0, norm_churn = 0.0, crash_churn, crash_age;
+  double crash_churn, crash_age;
 
   if (fault == crash_mode) {
 
@@ -3779,8 +3780,8 @@ keep_as_crash:
       
       crash_churn = get_num_churns();
       crash_age = get_log2days_age();
-      calculate_fitness_burst(crash_age, crash_churn, &norm_age, &norm_churn);
-      fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, norm_churn, norm_age);
+      calculate_fitness_burst(crash_age, crash_churn);
+      fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, show_norm_churn, show_norm_age);
       fflush(churn_file);
 
 #else
@@ -5685,8 +5686,8 @@ static u8 fuzz_one(char** argv) {
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
-  double norm_age = 0.0, norm_churn = 0.0;
-  seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn, &norm_age, &norm_churn);
+
+  seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
