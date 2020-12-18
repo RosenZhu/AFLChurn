@@ -91,24 +91,33 @@
 
 
 /********************    AFLChurn Variables    *********************/
-static u8 schedule = 0;
+static u8 schedule = 1;
 enum{
-  /* 00 */ ANNEAL,    /* default */
-  /* 01 */ AVERAGE
+  /* 00 */ POWER_NONE,
+  /* 01 */ ANNEAL,    /* default */
+  /* 02 */ AVERAGE
 };
 
 /* the info used for next seed selection: 
       exec time, input length and bitmap size
 */
-static u8 alias_info = 6; //default
+static u8 alias_info = 2; //default
 enum{
   /* 00 */ ALIAS_TIME,
-  /* 01 */ ALIAS_LENGTH,
-  /* 02 */ ALIAS_BITMAP,
-  /* 03 */ ALIAS_TIME_LENGTH,
-  /* 04 */ ALIAS_TIME_BITMAP,
-  /* 05 */ ALIAS_LENGTH_BITMAP,
-  /* 06 */ ALIAS_TIME_LENGTH_BITMAP
+  /* 01 */ ALIAS_BITMAP,
+  /* 02 */ ALIAS_TIME_BITMAP
+};
+
+/* fitness for age and churn:
+  add versus multiply;
+  normalize w.r.t. average versus min/max
+  */
+static u8 fitness_scheme = 0; //default
+enum{
+  /* 00 */ FCA_ADD_MAXMIN,
+  /* 01 */ FCA_ADD_AVERAGE,
+  /* 02 */ FCA_MUL_MAXMIN,
+  /* 03 */ FCA_MUL_AVERAGE
 };
 
 double max_p_age = 0.0,                /* max path age among all seeds */
@@ -135,7 +144,8 @@ u8 *prob_norm_buf,                  /* normed probability of seeds */
 
 u8 burst_seed_selection = 0;        /* Use alias method to select next seed based on burst */
 
-u64 total_input_len = 0;            /* Total length of all seeds */
+// u64 total_input_len = 0;            /* Total length of all seeds */
+double total_log_bitmap_size = 0;       /* Total value of log(bitmap_size) */
 
 double show_norm_churn = 0, show_norm_age = 0;
 
@@ -495,25 +505,90 @@ double get_num_churns(){
 
 /* Fitness for changing the score of each byte */
 double calculate_fitness_burst(double cur_age, double cur_churn){
-  double vburst = 0.0, rela_p_age, rela_p_churn;
+  double vburst = 0.0, rela_p_age, rela_p_churn, avg_weight_age, avg_weight_churn;
 
   if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)){
     vburst = 1;
     show_norm_age = 0.0;
     show_norm_churn = 0.0;
+    
   } else {
-    // the smaller age gets higher factor
-    if (max_p_age == min_p_age) rela_p_age = 0;
-    else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
-    if (rela_p_age < 0) rela_p_age = 0;
-    show_norm_age = rela_p_age;
-    // the higher churn gets higher factor
-    if (min_p_churn == max_p_churn) rela_p_churn = 0;
-    else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
-    if (rela_p_churn < 0) rela_p_churn = 0;
-    show_norm_churn = rela_p_churn;
-    // burst_factor: (0,2)
-    vburst = rela_p_age + rela_p_churn;
+      switch(fitness_scheme){
+        case FCA_ADD_MAXMIN:
+          // the smaller age gets higher factor
+          if (max_p_age == min_p_age) rela_p_age = 0;
+          else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
+          if (rela_p_age < 0) rela_p_age = 0;
+          show_norm_age = rela_p_age;
+          // the higher churn gets higher factor
+          if (min_p_churn == max_p_churn) rela_p_churn = 0;
+          else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
+          if (rela_p_churn < 0) rela_p_churn = 0;
+          show_norm_churn = rela_p_churn;
+          // burst_factor: (0,2)
+          vburst = rela_p_age + rela_p_churn;
+
+          break;
+
+        case FCA_ADD_AVERAGE:
+          // age
+          if (max_p_age == min_p_age) rela_p_age = 0;
+          else{
+            avg_weight_age = agg_weight_age / path_count;
+            if (cur_age == 0) rela_p_age = 5;
+            else rela_p_age = avg_weight_age / cur_age;
+          }
+          // churn
+          if (max_p_churn == min_p_churn) rela_p_churn = 0;
+          else {
+            avg_weight_churn = agg_weight_churn / path_count;
+            rela_p_churn = cur_churn / avg_weight_churn;
+          }
+          show_norm_age = rela_p_age;
+          show_norm_churn = rela_p_churn;
+
+          vburst = rela_p_age + rela_p_churn;
+
+          break;
+
+        case FCA_MUL_MAXMIN:
+          // the smaller age gets higher factor
+          if (max_p_age == min_p_age) rela_p_age = 0;
+          else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
+          show_norm_age = rela_p_age;
+          if (rela_p_age <= 0) rela_p_age = 1;
+          // the higher churn gets higher factor
+          if (min_p_churn == max_p_churn) rela_p_churn = 0;
+          else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
+          show_norm_churn = rela_p_churn;
+          if (rela_p_churn <= 0) rela_p_churn = 1;
+          // burst_factor: (0,1)
+          vburst = rela_p_age * rela_p_churn;
+          break;
+
+        case FCA_MUL_AVERAGE:
+          // age
+          if (max_p_age == min_p_age) rela_p_age = 1;
+          else{
+            avg_weight_age = agg_weight_age / path_count;
+            if (cur_age == 0) rela_p_age = 5;
+            else rela_p_age = avg_weight_age / cur_age;
+          }
+          // churn
+          if (max_p_churn == min_p_churn) rela_p_churn = 1;
+          else {
+            avg_weight_churn = agg_weight_churn / path_count;
+            rela_p_churn = cur_churn / avg_weight_churn;
+          }
+          show_norm_age = rela_p_age;
+          show_norm_churn = rela_p_churn;
+
+          vburst = rela_p_age * rela_p_churn;
+
+          break;
+
+        default: PFATAL("Unknown value for fitness scheme.");
+      }
   }
 
   return vburst;
@@ -1035,12 +1110,10 @@ void create_alias_table(void){
   double sum = 0;
   // smaller execution time indicates larger score
   u32 avg_exec_us = total_cal_us / total_cal_cycles;
-  u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
-  u32 avg_input_len = total_input_len / queued_paths;
+  u32 avg_log_bitmap_size = total_log_bitmap_size / total_bitmap_entries;
+  
 
-  double rela_time,
-          rela_length,  // TODO: after trim_case()?
-          rela_bitmap;
+  double rela_time, rela_log_bitmap;
 
   struct queue_entry *q = queue;
   for (i = 0; i < n; i++) {
@@ -1053,33 +1126,23 @@ void create_alias_table(void){
       q->alias_score 
         = calculate_fitness_burst(q->path_age, q->path_churn);
       rela_time = (double)avg_exec_us / q->exec_us;
-      rela_length = (double)avg_input_len / q->len;  // TODO: after trim_case()?
-      rela_bitmap = (double)q->bitmap_size / avg_bitmap_size;
+      rela_log_bitmap = (double)log(q->bitmap_size) / avg_log_bitmap_size;
 
       switch (alias_info){
         case ALIAS_TIME:
           q->alias_score *= rela_time;
           break;
-        case ALIAS_LENGTH:
-          q->alias_score *= rela_length;
-          break;
+        
         case ALIAS_BITMAP:
-          q->alias_score *= rela_bitmap;
+          q->alias_score *= rela_log_bitmap;
           break;
-        case ALIAS_TIME_LENGTH:
-          q->alias_score *= (rela_time * rela_length);
-          break;
+
         case ALIAS_TIME_BITMAP:
-          q->alias_score *= (rela_time * rela_bitmap);
+          q->alias_score *= (rela_time * rela_log_bitmap);
           break;
-        case ALIAS_LENGTH_BITMAP:
-          q->alias_score *= (rela_length * rela_bitmap);
-          break;
-        case ALIAS_TIME_LENGTH_BITMAP:
-          q->alias_score *= (rela_time * rela_length * rela_bitmap);
-          break;
+
         default:
-          q->alias_score *= (rela_time * rela_length * rela_bitmap);
+          q->alias_score *= (rela_time * rela_log_bitmap);
       }
     }
 
@@ -3133,6 +3196,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   path_count++;
 
   total_bitmap_size += q->bitmap_size;
+  total_log_bitmap_size += log(q->bitmap_size);
   total_bitmap_entries++;
 
   update_bitmap_score(q);
@@ -3141,8 +3205,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   calculate_fitness_burst(q->path_age, q->path_churn);
   fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, show_norm_churn, show_norm_age);
   fflush(churn_file);
-
-  total_input_len += q->len;
 
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
@@ -5227,7 +5289,7 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
 
-  double burst_factor = 0, rela_p_age, rela_p_churn, score_pow;
+  double burst_factor = 0, score_pow, fitness_score;
   double avg_weight_age, avg_weight_churn;
   
   q->times_selected ++;
@@ -5285,20 +5347,27 @@ static u32 calculate_score(struct queue_entry* q) {
   }
 
   switch (schedule){
-
+    case POWER_NONE:
+      burst_factor = 1;
+      break;
     case ANNEAL:
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
-        // the smaller age gets higher factor
-        if (max_p_age == min_p_age) rela_p_age = 0;
-        else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
-        // the higher churn gets higher factor
-        if (min_p_churn == max_p_churn) rela_p_churn = 0;
-        else rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
-        // score_pow: (0,2)
-        score_pow = (rela_p_age + rela_p_churn) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-        burst_factor = pow(2, 5 * (score_pow - 1));
+        fitness_score = calculate_fitness_burst(q->path_age, q->path_churn);
+        score_pow = fitness_score * (1 - pow(0.05, q->times_selected)) 
+                            + pow(0.05, q->times_selected);
+        /* ADD_MAXMIN: fitness_score=(0~2); MUL_MAXMIN: fitness_score=(0~1); 
+         ADD_AVERAGE: fitness_score=(0~); MUL_AVERAGE: fitness_score=(0~) */
+        switch(fitness_scheme){
+          case FCA_ADD_MAXMIN: burst_factor = pow(2, 5 * (score_pow - 1));break;
+          case FCA_ADD_AVERAGE: burst_factor = fitness_score;break;
+          case FCA_MUL_MAXMIN: burst_factor = pow(2, 10 * (score_pow - 0.5));break;
+          case FCA_MUL_AVERAGE: burst_factor = fitness_score;break;
+          default: PFATAL("Unknown value for fitness scheme.");
+        
+        }
       }
+      
       break;
 
     case AVERAGE:
@@ -8450,7 +8519,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ:F:")) > 0)
 
     switch (opt) {
 
@@ -8619,7 +8688,9 @@ int main(int argc, char** argv) {
         break;
       
       case 'p': /* Power schedule */
-        if (!strcmp(optarg, "anneal")){ // default
+        if (!strcmp(optarg, "none")){
+          schedule = POWER_NONE;
+        } else if (!strcmp(optarg, "anneal")){ // default
           schedule = ANNEAL;
         } else if (!strcmp(optarg, "average")){
           schedule = AVERAGE;
@@ -8627,7 +8698,10 @@ int main(int argc, char** argv) {
         break;
 
       case 'b': /* age, churn, or both */
-        if (!strcmp(optarg, "age")){
+        if (!strcmp(optarg, "none")){
+          use_burst_churn = 0;
+          use_burst_age = 0;
+        } else if (!strcmp(optarg, "age")){
           use_burst_churn = 0; // disable "churn"
         } else if (!strcmp(optarg, "churn")){
           use_burst_age = 0; // disable "age"
@@ -8645,12 +8719,8 @@ int main(int argc, char** argv) {
         if (sscanf(optarg, "%d", &selection) < 1) PFATAL("Bad syntax for -Z");
         switch(selection){
           case 0: alias_info = ALIAS_TIME; break;
-          case 1: alias_info = ALIAS_LENGTH; break;
-          case 2: alias_info = ALIAS_BITMAP; break;
-          case 3: alias_info = ALIAS_TIME_LENGTH; break;
-          case 4: alias_info = ALIAS_TIME_BITMAP; break;
-          case 5: alias_info = ALIAS_LENGTH_BITMAP; break;
-          case 6: alias_info = ALIAS_TIME_LENGTH_BITMAP; break;
+          case 1: alias_info = ALIAS_BITMAP; break;
+          case 2: alias_info = ALIAS_TIME_BITMAP; break;
           
           default: PFATAL("Unsupported value for -Z");
 
@@ -8658,6 +8728,20 @@ int main(int argc, char** argv) {
 
       }
         break;
+
+      case 'F':{
+        int fitshe = 0;
+        if (sscanf(optarg, "%d", &fitshe) < 1) PFATAL("Bad syntax for -F");
+        switch(fitshe){
+          case 0: fitness_scheme = FCA_ADD_MAXMIN; break;
+          case 1: fitness_scheme = FCA_ADD_AVERAGE; break;
+          case 2: fitness_scheme = FCA_MUL_MAXMIN; break;
+          case 3: fitness_scheme = FCA_MUL_AVERAGE; break;
+          default: PFATAL("Unsupported value for -F");
+        }
+      }
+        break;
+
 
       default:
 
@@ -8698,6 +8782,7 @@ int main(int argc, char** argv) {
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
 
   switch (schedule) {
+    case POWER_NONE: OKF ("Using No Schedule From Churn"); break;
     case ANNEAL: OKF ("Using Annealing-based Power Schedules (ANNEAL)"); break;
     case AVERAGE: OKF("Using percentage based on average score (AVERAGE)"); break;
     default: FATAL ("Unknown power schedule");
