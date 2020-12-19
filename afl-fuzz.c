@@ -553,12 +553,12 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
 
         case FCA_MUL_MAXMIN:
           // the smaller age gets higher factor
-          if (max_p_age == min_p_age) rela_p_age = 0;
+          if (max_p_age == min_p_age) rela_p_age = 1;
           else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
           show_norm_age = rela_p_age;
           if (rela_p_age <= 0) rela_p_age = 1;
           // the higher churn gets higher factor
-          if (min_p_churn == max_p_churn) rela_p_churn = 0;
+          if (min_p_churn == max_p_churn) rela_p_churn = 1;
           else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
           show_norm_churn = rela_p_churn;
           if (rela_p_churn <= 0) rela_p_churn = 1;
@@ -5289,7 +5289,7 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
 
-  double burst_factor = 0, score_pow, fitness_score;
+  double burst_factor = 0, score_pow, fitness_score, rela_p_age, rela_p_churn;
   double avg_weight_age, avg_weight_churn;
   
   q->times_selected ++;
@@ -5350,22 +5350,31 @@ static u32 calculate_score(struct queue_entry* q) {
     case POWER_NONE:
       burst_factor = 1;
       break;
+
     case ANNEAL:
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
-        fitness_score = calculate_fitness_burst(q->path_age, q->path_churn);
-        score_pow = fitness_score * (1 - pow(0.05, q->times_selected)) 
-                            + pow(0.05, q->times_selected);
-        /* ADD_MAXMIN: fitness_score=(0~2); MUL_MAXMIN: fitness_score=(0~1); 
-         ADD_AVERAGE: fitness_score=(0~); MUL_AVERAGE: fitness_score=(0~) */
-        switch(fitness_scheme){
-          case FCA_ADD_MAXMIN: burst_factor = pow(2, 5 * (score_pow - 1));break;
-          case FCA_ADD_AVERAGE: burst_factor = fitness_score;break;
-          case FCA_MUL_MAXMIN: burst_factor = pow(2, 10 * (score_pow - 0.5));break;
-          case FCA_MUL_AVERAGE: burst_factor = fitness_score;break;
-          default: PFATAL("Unknown value for fitness scheme.");
-        
-        }
+        // the smaller age gets higher factor
+        if (max_p_age == min_p_age) rela_p_age = 0;
+        else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
+        // the higher churn gets higher factor
+        if (min_p_churn == max_p_churn) rela_p_churn = 0;
+        else rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
+        // score_pow: (0,2)
+        score_pow = (rela_p_age + rela_p_churn) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
+        burst_factor = pow(2, 5 * (score_pow - 1));
+      //   fitness_score = calculate_fitness_burst(q->path_age, q->path_churn);
+      //   score_pow = fitness_score * (1 - pow(0.05, q->times_selected)) 
+      //                       + pow(0.05, q->times_selected);
+      //   /* ADD_MAXMIN: fitness_score=(0~2); MUL_MAXMIN: fitness_score=(0~1); 
+      //    ADD_AVERAGE: fitness_score=(0~); MUL_AVERAGE: fitness_score=(0~) */
+      //   switch(fitness_scheme){
+      //     case FCA_ADD_MAXMIN: burst_factor = pow(2, 5 * (score_pow - 1));break;
+      //     case FCA_ADD_AVERAGE: burst_factor = fitness_score;break;
+      //     case FCA_MUL_MAXMIN: burst_factor = pow(2, 10 * (score_pow - 0.5));break;
+      //     case FCA_MUL_AVERAGE: burst_factor = fitness_score;break;
+      //     default: PFATAL("Unknown value for fitness scheme.");
+      //   }
       }
       
       break;
