@@ -105,7 +105,8 @@ static u8 alias_info = 2; //default
 enum{
   /* 00 */ ALIAS_TIME,
   /* 01 */ ALIAS_BITMAP,
-  /* 02 */ ALIAS_TIME_BITMAP
+  /* 02 */ ALIAS_TIME_BITMAP,
+  /* 03 */ ALIAS_NONE
 };
 
 /* fitness for age and churn:
@@ -1139,6 +1140,10 @@ void create_alias_table(void){
 
         case ALIAS_TIME_BITMAP:
           q->alias_score *= (rela_time * rela_log_bitmap);
+          break;
+
+        case ALIAS_NONE:
+          q->alias_score *= 1;
           break;
 
         default:
@@ -8730,6 +8735,7 @@ int main(int argc, char** argv) {
           case 0: alias_info = ALIAS_TIME; break;
           case 1: alias_info = ALIAS_BITMAP; break;
           case 2: alias_info = ALIAS_TIME_BITMAP; break;
+          case 3: alias_info = ALIAS_NONE; break;
           
           default: PFATAL("Unsupported value for -Z");
 
