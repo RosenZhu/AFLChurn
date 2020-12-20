@@ -83,7 +83,8 @@ Meaning:
     enum{
     /* 00 */ ALIAS_TIME,
     /* 01 */ ALIAS_BITMAP,
-    /* 02 */ ALIAS_TIME_BITMAP
+    /* 02 */ ALIAS_TIME_BITMAP,
+    /* 03 */ ALIAS_NONE
     };
 
 ### option -F
