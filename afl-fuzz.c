@@ -126,7 +126,7 @@ double max_p_age = 0.0,                /* max path age among all seeds */
        min_p_churn = 10000.0;          /* minimun path churn among all seeds */
 
 double agg_weight_age = 0, agg_weight_churn = 0; /* aggregate weight */
-size_t path_count = 0;  /* aggregate count */
+size_t calibrated_paths = 0;  /* aggregate count */
 
 double show_factor = 0.0;
 
@@ -534,14 +534,14 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
           // age
           if (max_p_age == min_p_age) rela_p_age = 0;
           else{
-            avg_weight_age = agg_weight_age / path_count;
+            avg_weight_age = agg_weight_age / calibrated_paths;
             if (cur_age == 0) rela_p_age = 5;
             else rela_p_age = avg_weight_age / cur_age;
           }
           // churn
           if (max_p_churn == min_p_churn) rela_p_churn = 0;
           else {
-            avg_weight_churn = agg_weight_churn / path_count;
+            avg_weight_churn = agg_weight_churn / calibrated_paths;
             rela_p_churn = cur_churn / avg_weight_churn;
           }
           show_norm_age = rela_p_age;
@@ -570,14 +570,14 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
           // age
           if (max_p_age == min_p_age) rela_p_age = 1;
           else{
-            avg_weight_age = agg_weight_age / path_count;
+            avg_weight_age = agg_weight_age / calibrated_paths;
             if (cur_age == 0) rela_p_age = 5;
             else rela_p_age = avg_weight_age / cur_age;
           }
           // churn
           if (max_p_churn == min_p_churn) rela_p_churn = 1;
           else {
-            avg_weight_churn = agg_weight_churn / path_count;
+            avg_weight_churn = agg_weight_churn / calibrated_paths;
             rela_p_churn = cur_churn / avg_weight_churn;
           }
           show_norm_age = rela_p_age;
@@ -3193,7 +3193,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     agg_weight_age += q->path_age;
   if (use_burst_churn)
     agg_weight_churn += q->path_churn;
-  path_count++;
+  calibrated_paths++;
 
   total_bitmap_size += q->bitmap_size;
   total_log_bitmap_size += log(q->bitmap_size);
@@ -5289,7 +5289,7 @@ static u32 calculate_score(struct queue_entry* q) {
   u32 avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
   u32 perf_score = 100;
 
-  double burst_factor = 0, score_pow, fitness_score, rela_p_age, rela_p_churn;
+  double burst_factor = 0, score_pow, rela_p_age, rela_p_churn; //, fitness_score
   double avg_weight_age, avg_weight_churn;
   
   q->times_selected ++;
@@ -5383,8 +5383,8 @@ static u32 calculate_score(struct queue_entry* q) {
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
         // the larger churn gets higher weight
-        if (path_count && (min_p_churn != max_p_churn)){ // when using churn
-          avg_weight_churn = agg_weight_churn / path_count;
+        if (calibrated_paths && (min_p_churn != max_p_churn)){ // when using churn
+          avg_weight_churn = agg_weight_churn / calibrated_paths;
 
           if (q->path_churn       - 50 > avg_weight_churn) burst_factor += 8;
           else if (q->path_churn  - 30 > avg_weight_churn) burst_factor += 6;
@@ -5396,8 +5396,8 @@ static u32 calculate_score(struct queue_entry* q) {
           else if (q->path_churn  + 5 < avg_weight_churn) burst_factor += 0.75;
         }
         // age: the smaller age gets higher weight
-        if (path_count && (max_p_age != min_p_age)){ // when using ages
-          avg_weight_age = agg_weight_age / path_count;
+        if (calibrated_paths && (max_p_age != min_p_age)){ // when using ages
+          avg_weight_age = agg_weight_age / calibrated_paths;
 
           if (pow(2, q->path_age)       * 0.1 > pow(2, avg_weight_age)) burst_factor += 0.1;
           else if (pow(2, q->path_age)  * 0.25 > pow(2, avg_weight_age)) burst_factor += 0.25;
