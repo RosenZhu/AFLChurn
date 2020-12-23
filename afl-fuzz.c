@@ -137,11 +137,11 @@ static u8 use_burst_age = 1,    /* Use the age information */
 
 u8 use_byte_fitness = 0;  /* use byte score to select bytes; default: not use */
 
-static u32* alias_table;            /* alias method: alias table  */
-static double* alias_probability;   /* alias probability of a seed */
-u8 *prob_norm_buf,                  /* normed probability of seeds */
-   *out_scratch_buf,                /* kicked out of analysis queue during creating alias table */
-   *in_scratch_buf;                 /* kept in analysis queue during creating alias table */
+static u32* seed_alias_table;            /* alias method: alias table  */
+static double* seed_alias_probability;   /* alias probability of a seed */
+u8 *seed_prob_norm_buf,                  /* normed probability of seeds */
+   *seed_out_scratch_buf,                /* kicked out of analysis queue during creating alias table */
+   *seed_in_scratch_buf;                 /* kept in analysis queue during creating alias table */
 
 u8 burst_seed_selection = 0;        /* Use alias method to select next seed based on burst */
 
@@ -326,11 +326,16 @@ struct queue_entry {
          path_churn,                 /* Average number of churns of executed basic blocks */
          alias_score;                 /* Alias score of a seed; For alias method */
 
-  signed char* byte_score;          /* possibility to mutate a certain byte, initial is 128 */
+  signed char* byte_score;          /* possibility to mutate a certain byte, initial is 0 */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
 
+  u32 *alias_table;                   /* table for byte selection (ACO) */
+  double *alias_prob;                 /* probability for bytes (ACO) */
+  double *prob_norm_buf;
+  int *out_scratch_buf;
+  int *in_scratch_buf;
 
   struct queue_entry *next,           /* Next element, if any             */
                      *next_100;       /* 100 elements ahead               */
@@ -612,8 +617,7 @@ void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burs
   }
 }
 
-/* This needs to be fast.
-For deterministic stage. In deterministic stage, 
+/* For deterministic stage. In deterministic stage, 
       the scores will not gravitate to zero */
 void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
                   s32 byte_start_pos, s32 byte_end_pos){
@@ -650,57 +654,11 @@ void expire_old_score(struct queue_entry* q){
   if (!(total_execs % ACO_FREQENCY)){
     if (q->byte_score){
       for (int i = 0; i < q->len; i++){
+        /* byte_score = (-127, 128); gravitate to zero */
         q->byte_score[i] *= ACO_COEF; // just drop the fractional part
       }
     }
   }
-}
-
-/* This needs to be fast.
-select the byte according to byte score */
-u32 select_byte(struct queue_entry* q, s32 input_len){
-  u32 sum_score = 0, rand_num, selected_byte,
-      cur_len, sum_range = 0;
-  u8 bias = 128;
-
-  selected_byte = UR(input_len);
-
-  if (input_len > q->len) cur_len = q->len;
-  else cur_len = input_len;
-
-  if (!q->byte_score) return selected_byte;
-
-  /* Calculate the overall sum in q->byte_score[i] */
-  for (int i=0; i < cur_len; i++){
-    // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
-    // which is suitable for calculating probabilities
-    sum_score = sum_score + q->byte_score[i] + bias;
-  }
-  // if all the scores are -128 or 127
-  if (!sum_score || (sum_score == 255 * cur_len)) return selected_byte;
-
-  rand_num = UR(sum_score + 1); // get the random number
-
-  /* Select the byte that the random number falls in */
-  for (int j = 0; j < cur_len; j++){
-    sum_range = sum_range + q->byte_score[j] + bias;
-    if (rand_num <= sum_range){
-      selected_byte = j;
-      break;
-    } 
-  }
-
-  return selected_byte;
-}
-
-/* select a way to choose mutated bytes */
-u32 URfitness(struct queue_entry* q, s32 input_len){
-  if (use_byte_fitness) {
-    return select_byte(q, input_len);
-  } else{
-    return UR(input_len);
-  }
-
 }
 
 
@@ -746,6 +704,138 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   }
 
 }
+
+/* This needs to be fast.
+select the byte according to byte score */
+u32 select_byte(struct queue_entry* q, s32 input_len){
+  u32 sum_score = 0, rand_num, selected_byte,
+      cur_len, sum_range = 0;
+  u8 bias = 128;
+
+  selected_byte = UR(input_len);
+
+  if (input_len > q->len) cur_len = q->len;
+  else cur_len = input_len;
+
+  if (!q->byte_score) return selected_byte;
+
+  /* Calculate the overall sum in q->byte_score[i] */
+  for (int i=0; i < cur_len; i++){
+    // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
+    // which is suitable for calculating probabilities
+    sum_score = sum_score + q->byte_score[i] + bias;
+  }
+  // if all the scores are -128 or 127
+  if (!sum_score || (sum_score == 255 * cur_len)) return selected_byte;
+
+  rand_num = UR(sum_score + 1); // get the random number
+
+  /* Select the byte that the random number falls in */
+  for (int j = 0; j < cur_len; j++){
+    sum_range = sum_range + q->byte_score[j] + bias;
+    if (rand_num <= sum_range){
+      selected_byte = j;
+      break;
+    } 
+  }
+
+  return selected_byte;
+}
+
+// /* 
+// Select bytes based no churn values by using ACO.
+//  */
+// static inline u32 select_one_byte(struct queue_entry* q, u32 cur_input_len){
+//   // randomly select an aliased seed
+//   u32 s = UR(cur_input_len);
+//   if (s >= q->len) return s;
+//   // generate the next percent
+//   double p = (double)UR(100)/100;
+//   return (p < q->alias_prob[s] ? s : q->alias_table[s]);
+// }
+
+// void create_byte_alias_table(struct queue_entry* q){
+
+//   u32 n = q->len, i = 0, a, g;
+
+//   double *P = q->prob_norm_buf;
+//   int *   S = q->out_scratch_buf;
+//   int *   L = q->in_scratch_buf;
+
+//   if (!P || !S || !L) { FATAL("could not aquire memory for alias table"); }
+//   memset(q->alias_table, 0, n * sizeof(u32));
+//   memset(q->alias_prob, 0, n * sizeof(double));
+
+//   u32 sum = 0;
+//   u8 bias = 128;
+
+//   for (i = 0; i < n; i++){
+//     // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
+//     // which is suitable for calculating probabilities
+//     sum = sum + q->byte_score[i] + bias;
+//   }
+
+//   if (sum == 0){
+//     memset(q->alias_prob, 1, n * sizeof(double));
+//     return;
+//   }
+
+//   for (i = 0; i < n; i++){
+//     P[i] = (q->byte_score[i] + bias) * n / sum;
+//   }
+
+//   int nS = 0, nL = 0, s;
+//   for (s = (s32)n - 1; s >= 0; --s) {
+
+//     if (P[s] < 1) {
+
+//       S[nS++] = s;
+
+//     } else {
+
+//       L[nL++] = s;
+
+//     }
+
+//   }
+
+//   while (nS && nL) {
+
+//     a = S[--nS];
+//     g = L[--nL];
+//     q->alias_prob[a] = P[a];
+//     q->alias_table[a] = g;
+//     P[g] = P[g] + P[a] - 1;
+//     if (P[g] < 1) {
+
+//       S[nS++] = g;
+
+//     } else {
+
+//       L[nL++] = g;
+
+//     }
+
+//   }
+
+//   while (nL)
+//     q->alias_prob[L[--nL]] = 1;
+
+//   while (nS)
+//     q->alias_prob[S[--nS]] = 1;
+
+// }
+
+/* select a way to choose mutated bytes */
+u32 URfitness(struct queue_entry* q, s32 input_len){
+  if (use_byte_fitness) {
+    return select_byte(q, input_len);
+  } else{
+    return UR(input_len);
+  }
+
+}
+
 
 
 /* Shuffle an array of pointers. Might be slightly biased. */
@@ -1072,12 +1162,12 @@ static u8* DTD(u64 cur_ms, u64 event_ms) {
 
 */
 void destroy_alias_buf(void){
-  ck_free(prob_norm_buf);
-  ck_free(out_scratch_buf);
-  ck_free(in_scratch_buf);
+  ck_free(seed_prob_norm_buf);
+  ck_free(seed_out_scratch_buf);
+  ck_free(seed_in_scratch_buf);
 
-  ck_free(alias_table);
-  ck_free(alias_probability);
+  ck_free(seed_alias_table);
+  ck_free(seed_alias_probability);
 }
 /* select next queue entry based on alias probability of churns
  ID range: 0 ~ queued_paths -1
@@ -1086,27 +1176,27 @@ static inline u32 select_next_queue_entry(void){
   // randomly select an aliased seed
   u32 s = UR(queued_paths);
   // generate the next percent
-  double p = UR(100)/100;
-  return (p < alias_probability[s] ? s : alias_table[s]);
+  double p = (double)UR(100)/100;
+  return (p < seed_alias_probability[s] ? s : seed_alias_table[s]);
 }
 
-void create_alias_table(void){
+void create_seed_alias_table(void){
 
   u32 n = queued_paths, i = 0, a, g;
 
-  alias_table = (u32 *)ck_realloc((void *)alias_table, n * sizeof(u32));
-  alias_probability = (double *)ck_realloc((void *)alias_probability, n * sizeof(double));
+  seed_alias_table = (u32 *)ck_realloc((void *)seed_alias_table, n * sizeof(u32));
+  seed_alias_probability = (double *)ck_realloc((void *)seed_alias_probability, n * sizeof(double));
 
-  prob_norm_buf = (u8 *)ck_realloc((void *)prob_norm_buf, n * sizeof(double));
-  out_scratch_buf = (u8 *)ck_realloc((void *)out_scratch_buf, n * sizeof(u32));
-  in_scratch_buf = (u8 *)ck_realloc((void *)in_scratch_buf, n * sizeof(u32));
-  double *P = (double *)prob_norm_buf;
-  int *   S = (u32 *)out_scratch_buf;
-  int *   L = (u32 *)in_scratch_buf;
+  seed_prob_norm_buf = (u8 *)ck_realloc((void *)seed_prob_norm_buf, n * sizeof(double));
+  seed_out_scratch_buf = (u8 *)ck_realloc((void *)seed_out_scratch_buf, n * sizeof(u32));
+  seed_in_scratch_buf = (u8 *)ck_realloc((void *)seed_in_scratch_buf, n * sizeof(u32));
+  double *P = (double *)seed_prob_norm_buf;
+  int *   S = (u32 *)seed_out_scratch_buf;
+  int *   L = (u32 *)seed_in_scratch_buf;
 
   if (!P || !S || !L) { FATAL("could not aquire memory for alias table"); }
-  memset((void *)alias_table, 0, n * sizeof(u32));
-  memset((void *)alias_probability, 0, n * sizeof(double));
+  memset((void *)seed_alias_table, 0, n * sizeof(u32));
+  memset((void *)seed_alias_probability, 0, n * sizeof(double));
 
   double sum = 0;
   // smaller execution time indicates larger score
@@ -1156,7 +1246,10 @@ void create_alias_table(void){
 
   }
 
-  if (sum == 0) return;
+  if (sum == 0) {
+    memset((void *)seed_alias_probability, 1, n * sizeof(double));
+    return;
+  }
 
   q = queue;
   for (i = 0; i < n; i++) {
@@ -1183,8 +1276,8 @@ void create_alias_table(void){
 
     a = S[--nS];
     g = L[--nL];
-    alias_probability[a] = P[a];
-    alias_table[a] = g;
+    seed_alias_probability[a] = P[a];
+    seed_alias_table[a] = g;
     P[g] = P[g] + P[a] - 1;
     if (P[g] < 1) {
 
@@ -1199,10 +1292,10 @@ void create_alias_table(void){
   }
 
   while (nL)
-    alias_probability[L[--nL]] = 1;
+    seed_alias_probability[L[--nL]] = 1;
 
   while (nS)
-    alias_probability[S[--nS]] = 1;
+    seed_alias_probability[S[--nS]] = 1;
 
 
 }
@@ -1342,6 +1435,11 @@ EXP_ST void destroy_queue(void) {
     ck_free(q->fname);
     ck_free(q->trace_mini);
     ck_free(q->byte_score);
+    ck_free(q->alias_table);
+    ck_free(q->alias_prob);
+    ck_free(q->prob_norm_buf);
+    ck_free(q->out_scratch_buf);
+    ck_free(q->in_scratch_buf);
     ck_free(q);
     q = n;
 
@@ -5754,12 +5852,24 @@ static u8 fuzz_one(char** argv) {
     queue_cur->trim_done = 1;
 
     if (len != queue_cur->len) len = queue_cur->len;
-
-    if (!queue_cur->byte_score && use_byte_fitness){
-      queue_cur->byte_score = ck_alloc(queue_cur->len);
-    }
       
   }
+
+  if (use_byte_fitness){
+    if (!queue_cur->byte_score){
+      queue_cur->byte_score = ck_alloc(queue_cur->len);
+    }
+
+    if (!queue_cur->alias_table){
+      queue_cur->alias_table = ck_alloc(queue_cur->len * sizeof(u32));
+      queue_cur->alias_prob = ck_alloc(queue_cur->len * sizeof(double));
+
+      queue_cur->prob_norm_buf = ck_alloc(queue_cur->len * sizeof(double));
+      queue_cur->out_scratch_buf = ck_alloc(queue_cur->len * sizeof(int));
+      queue_cur->in_scratch_buf = ck_alloc(queue_cur->len * sizeof(int));
+    }
+  }
+
 
   memcpy(out_buf, in_buf, len);
 
@@ -8937,7 +9047,7 @@ int main(int argc, char** argv) {
     if (likely(burst_seed_selection)){
       if (unlikely(prev_queued_alias < queued_paths)){
         prev_queued_alias = queued_paths;
-        create_alias_table();
+        create_seed_alias_table();
       }
 
       tmp_id = current_entry = select_next_queue_entry();
