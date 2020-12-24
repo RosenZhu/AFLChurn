@@ -705,131 +705,100 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
 
 }
 
-/* This needs to be fast.
-select the byte according to byte score */
-u32 select_byte(struct queue_entry* q, s32 input_len){
-  u32 sum_score = 0, rand_num, selected_byte,
-      cur_len, sum_range = 0;
-  u8 bias = 128;
 
-  selected_byte = UR(input_len);
-
-  if (input_len > q->len) cur_len = q->len;
-  else cur_len = input_len;
-
-  if (!q->byte_score) return selected_byte;
-
-  /* Calculate the overall sum in q->byte_score[i] */
-  for (int i=0; i < cur_len; i++){
-    // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
-    // which is suitable for calculating probabilities
-    sum_score = sum_score + q->byte_score[i] + bias;
-  }
-  // if all the scores are -128 or 127
-  if (!sum_score || (sum_score == 255 * cur_len)) return selected_byte;
-
-  rand_num = UR(sum_score + 1); // get the random number
-
-  /* Select the byte that the random number falls in */
-  for (int j = 0; j < cur_len; j++){
-    sum_range = sum_range + q->byte_score[j] + bias;
-    if (rand_num <= sum_range){
-      selected_byte = j;
-      break;
-    } 
-  }
-
-  return selected_byte;
+/* 
+Select one byte to be mutated based no churn values by using ACO.
+ */
+static inline u32 select_one_byte(struct queue_entry *q, u32 cur_input_len){
+  // randomly select an aliased seed
+  u32 s = UR(cur_input_len);
+  // cur_input_len is too long (than seed length)
+  if (s >= q->len) return s;
+  // cur_input_len is too short (than the max alias position)
+  if (q->alias_table[s] >= cur_input_len) return s;
+  // generate the next percent
+  double p = (double)UR(100)/100;
+  return (p < q->alias_prob[s] ? s : q->alias_table[s]);
 }
 
-// /* 
-// Select bytes based no churn values by using ACO.
-//  */
-// static inline u32 select_one_byte(struct queue_entry* q, u32 cur_input_len){
-//   // randomly select an aliased seed
-//   u32 s = UR(cur_input_len);
-//   if (s >= q->len) return s;
-//   // generate the next percent
-//   double p = (double)UR(100)/100;
-//   return (p < q->alias_prob[s] ? s : q->alias_table[s]);
-// }
+void create_byte_alias_table(struct queue_entry* q){
 
-// void create_byte_alias_table(struct queue_entry* q){
+  u32 n = q->len, i = 0, a, g;
 
-//   u32 n = q->len, i = 0, a, g;
+  double *P = q->prob_norm_buf;
+  int *   S = q->out_scratch_buf;
+  int *   L = q->in_scratch_buf;
 
-//   double *P = q->prob_norm_buf;
-//   int *   S = q->out_scratch_buf;
-//   int *   L = q->in_scratch_buf;
+  if (!P || !S || !L) { FATAL("could not aquire memory for alias table"); }
+  memset(q->alias_table, 0, n * sizeof(u32));
+  memset(q->alias_prob, 0, n * sizeof(double));
 
-//   if (!P || !S || !L) { FATAL("could not aquire memory for alias table"); }
-//   memset(q->alias_table, 0, n * sizeof(u32));
-//   memset(q->alias_prob, 0, n * sizeof(double));
+  u32 sum = 0;
+  u8 bias = 128;
 
-//   u32 sum = 0;
-//   u8 bias = 128;
+  for (i = 0; i < n; i++){
+    // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
+    // which is suitable for calculating probabilities
+    sum = sum + q->byte_score[i] + bias;
+  }
 
-//   for (i = 0; i < n; i++){
-//     // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
-//     // which is suitable for calculating probabilities
-//     sum = sum + q->byte_score[i] + bias;
-//   }
+  if (sum == 0){
+    for (i=0; i< n; i++){
+      q->alias_prob[i] = 1.0;
+    }
+    return;
+  }
 
-//   if (sum == 0){
-//     memset(q->alias_prob, 1, n * sizeof(double));
-//     return;
-//   }
+  for (i = 0; i < n; i++){
+    P[i] = (double)(q->byte_score[i] + bias) * n / sum;
+  }
 
-//   for (i = 0; i < n; i++){
-//     P[i] = (q->byte_score[i] + bias) * n / sum;
-//   }
+  int nS = 0, nL = 0, s;
+  for (s = (s32)n - 1; s >= 0; --s) {
 
-//   int nS = 0, nL = 0, s;
-//   for (s = (s32)n - 1; s >= 0; --s) {
+    if (P[s] < 1) {
 
-//     if (P[s] < 1) {
+      S[nS++] = s;
 
-//       S[nS++] = s;
+    } else {
 
-//     } else {
+      L[nL++] = s;
 
-//       L[nL++] = s;
+    }
 
-//     }
+  }
 
-//   }
+  while (nS && nL) {
 
-//   while (nS && nL) {
+    a = S[--nS];
+    g = L[--nL];
+    q->alias_prob[a] = P[a];
+    q->alias_table[a] = g;
+    P[g] = P[g] + P[a] - 1;
+    if (P[g] < 1) {
 
-//     a = S[--nS];
-//     g = L[--nL];
-//     q->alias_prob[a] = P[a];
-//     q->alias_table[a] = g;
-//     P[g] = P[g] + P[a] - 1;
-//     if (P[g] < 1) {
+      S[nS++] = g;
 
-//       S[nS++] = g;
+    } else {
 
-//     } else {
+      L[nL++] = g;
 
-//       L[nL++] = g;
+    }
 
-//     }
+  }
 
-//   }
+  while (nL)
+    q->alias_prob[L[--nL]] = 1;
 
-//   while (nL)
-//     q->alias_prob[L[--nL]] = 1;
+  while (nS)
+    q->alias_prob[S[--nS]] = 1;
 
-//   while (nS)
-//     q->alias_prob[S[--nS]] = 1;
-
-// }
+}
 
 /* select a way to choose mutated bytes */
 u32 URfitness(struct queue_entry* q, s32 input_len){
   if (use_byte_fitness) {
-    return select_byte(q, input_len);
+    return select_one_byte(q, input_len);
   } else{
     return UR(input_len);
   }
@@ -1247,7 +1216,9 @@ void create_seed_alias_table(void){
   }
 
   if (sum == 0) {
-    memset((void *)seed_alias_probability, 1, n * sizeof(double));
+    for (i=0; i<n; i++){
+      seed_alias_probability[i] = 1.0;
+    }
     return;
   }
 
@@ -5737,6 +5708,8 @@ static u8 fuzz_one(char** argv) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
+  s32 third1_stage, third2_stage; // time to update byte alias table
+
   double seed_burst;
 
 #ifdef IGNORE_FINDS
@@ -5778,8 +5751,14 @@ static u8 fuzz_one(char** argv) {
 #endif /* ^IGNORE_FINDS */
 
   if (not_on_tty) {
-    ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes found)...",
+    if (burst_seed_selection){
+      ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes, %.3f alias score)...",
+    current_entry, queued_paths, unique_crashes, queue_cur->alias_score);
+    } else{
+      ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes found)...",
          current_entry, queued_paths, unique_crashes);
+    }
+    
     fflush(stdout);
   }
 
@@ -6906,6 +6885,8 @@ skip_extras:
 
 havoc_stage:
 
+  /* If the seed has not been fuzzed before. */
+  if (!queue_cur->was_fuzzed && use_byte_fitness) create_byte_alias_table(queue_cur);
 
   stage_cur_byte = -1;
 
@@ -6934,6 +6915,9 @@ havoc_stage:
 
   if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
 
+  third1_stage = stage_max / 3;
+  third2_stage = stage_max * 2 / 3;
+
   temp_len = len;
 
   orig_hit_cnt = queued_paths + unique_crashes;
@@ -6944,6 +6928,11 @@ havoc_stage:
      where we take the input file and make random stacked tweaks. */
   
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
+
+    if (use_byte_fitness) {
+      if (stage_cur == third1_stage) create_byte_alias_table(queue_cur);
+      if (stage_cur == third2_stage) create_byte_alias_table(queue_cur);
+    }
 
     u32 use_stacking = 1 << (1 + UR(HAVOC_STACK_POW2));
 
@@ -7363,6 +7352,8 @@ havoc_stage:
     }
 
   }
+
+  if (use_byte_fitness) create_byte_alias_table(queue_cur);
 
   new_hit_cnt = queued_paths + unique_crashes;
 
