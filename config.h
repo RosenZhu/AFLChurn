@@ -331,6 +331,7 @@
 /* ACO: update frequency and coefficient */
 #define ACO_FREQENCY       30
 #define ACO_COEF           0.9
+#define INIT_BYTE_SCORE    128
 
 
 /* Path weight. 8 bytes for ages, 8 bytes for block hit-counts of ages.

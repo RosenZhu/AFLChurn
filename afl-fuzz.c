@@ -326,7 +326,7 @@ struct queue_entry {
          path_churn,                 /* Average number of churns of executed basic blocks */
          alias_score;                 /* Alias score of a seed; For alias method */
 
-  signed char* byte_score;          /* possibility to mutate a certain byte, initial is 0 */
+  u8* byte_score;          /* possibility to mutate a certain byte, initial is INIT_BYTE_SCORE */
 
   u8* trace_mini;                     /* Trace bytes, if kept             */
   u32 tc_ref;                         /* Trace bytes ref count            */
@@ -606,12 +606,12 @@ void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burs
 
   if (cur_burst > seed_burst + delt){ // larger burst gets higher score
     for (u32 i = start_pos; i <= end_pos; i++){
-      if (q->byte_score[i] < 127) // the largest score is 127
+      if (q->byte_score[i] < 255) // don't overflow
           q->byte_score[i]++;
     }
   } else if(cur_burst + delt < seed_burst){
     for (u32 i = start_pos; i <= end_pos; i++){
-      if (q->byte_score[i] > -128) // the minimum score is -128
+      if (q->byte_score[i] > 0) // don't overflow
           q->byte_score[i]--;
     }
   }
@@ -654,8 +654,9 @@ void expire_old_score(struct queue_entry* q){
   if (!(total_execs % ACO_FREQENCY)){
     if (q->byte_score){
       for (int i = 0; i < q->len; i++){
-        /* byte_score = (-127, 128); gravitate to zero */
-        q->byte_score[i] *= ACO_COEF; // just drop the fractional part
+        /* gravitate to INIT_BYTE_SCORE */
+        q->byte_score[i] = 
+          (q->byte_score[i] - INIT_BYTE_SCORE) * ACO_COEF + INIT_BYTE_SCORE; // just drop the fractional part
       }
     }
   }
@@ -714,7 +715,7 @@ static inline u32 select_one_byte(struct queue_entry *q, u32 cur_input_len){
   u32 s = UR(cur_input_len);
   // cur_input_len is too long (than seed length)
   if (s >= q->len) return s;
-  // cur_input_len is too short (than the max alias position)
+  // cur_input_len is too short (than the alias position)
   if (q->alias_table[s] >= cur_input_len) return s;
   // generate the next percent
   double p = (double)UR(100)/100;
@@ -734,12 +735,9 @@ void create_byte_alias_table(struct queue_entry* q){
   memset(q->alias_prob, 0, n * sizeof(double));
 
   u32 sum = 0;
-  u8 bias = 128;
 
   for (i = 0; i < n; i++){
-    // transfer q->byte_score[i] from [-128, 127] to [0, 255], 
-    // which is suitable for calculating probabilities
-    sum = sum + q->byte_score[i] + bias;
+    sum += q->byte_score[i];
   }
 
   if (sum == 0){
@@ -750,7 +748,7 @@ void create_byte_alias_table(struct queue_entry* q){
   }
 
   for (i = 0; i < n; i++){
-    P[i] = (double)(q->byte_score[i] + bias) * n / sum;
+    P[i] = (double)(q->byte_score[i] * n) / sum;
   }
 
   int nS = 0, nL = 0, s;
@@ -5837,6 +5835,8 @@ static u8 fuzz_one(char** argv) {
   if (use_byte_fitness){
     if (!queue_cur->byte_score){
       queue_cur->byte_score = ck_alloc(queue_cur->len);
+      // initialize the byte score as INIT_BYTE_SCORE
+      memset(queue_cur->byte_score, INIT_BYTE_SCORE, queue_cur->len);
     }
 
     if (!queue_cur->alias_table){
