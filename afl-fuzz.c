@@ -619,9 +619,9 @@ void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burs
 
 /* For deterministic stage. In deterministic stage, 
       the scores will not gravitate to zero */
-void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
+void cal_init_seed_byte_score(struct queue_entry* q,
                   s32 byte_start_pos, s32 byte_end_pos){
-  double cur_log2_age, cur_churn, cur_burst;
+  double cur_log2_age, cur_churn, cur_burst, seed_burst;
   u32 end_pos, start_pos;
   u8 num_neighbor_bytes = 0;
 
@@ -642,6 +642,7 @@ void cal_init_seed_byte_score(struct queue_entry* q, double seed_burst,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
+  seed_burst = calculate_fitness_burst(q->path_age, q->path_churn);
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
   update_byte_score(q, seed_burst, cur_burst, start_pos, end_pos);
@@ -666,11 +667,11 @@ void expire_old_score(struct queue_entry* q){
 /* Locate the bytes that are changed in this mutation;
     then update the score for these bytes */
 void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem, 
-            u8* cur_input_mem, u32 cur_input_len, double seed_burst){
+            u8* cur_input_mem, u32 cur_input_len){
   
   u32 rem, div, tmp_len;
   u8 group_size = 4;
-  double cur_log2_age, cur_churn, cur_burst;
+  double cur_log2_age, cur_churn, cur_burst, seed_burst;
 
   if (q->len > cur_input_len) tmp_len = cur_input_len;
   else tmp_len = q->len;
@@ -681,6 +682,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
+  seed_burst = calculate_fitness_burst(q->path_age, q->path_churn);
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
   /* if one byte in a group with the size group_size changes the fitness,
@@ -5708,7 +5710,7 @@ static u8 fuzz_one(char** argv) {
 
   s32 third1_stage, third2_stage; // time to update byte alias table
 
-  double seed_burst;
+  // double seed_burst;
 
 #ifdef IGNORE_FINDS
 
@@ -5859,7 +5861,7 @@ static u8 fuzz_one(char** argv) {
 
   orig_perf = perf_score = calculate_score(queue_cur);
 
-  seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn);
+  // seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -5906,7 +5908,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-      cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+      cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
 
@@ -6001,7 +6003,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-      cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+      cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -6032,7 +6034,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-      cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+      cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
 
     FLIP_BIT(out_buf, stage_cur);
     FLIP_BIT(out_buf, stage_cur + 1);
@@ -6086,7 +6088,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-        cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+        cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
 
     /* We also use this stage to pull off a simple trick: we identify
        bytes that seem to have no effect on the current execution path
@@ -6166,7 +6168,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-        cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+        cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
     stage_cur++;
 
     *(u16*)(out_buf + i) ^= 0xFFFF;
@@ -6205,7 +6207,7 @@ static u8 fuzz_one(char** argv) {
 
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     if (use_byte_fitness)
-      cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+      cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
     stage_cur++;
 
     *(u32*)(out_buf + i) ^= 0xFFFFFFFF;
@@ -6263,7 +6265,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
         stage_cur++;
 
       } else stage_max--;
@@ -6277,7 +6279,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
         stage_cur++;
 
       } else stage_max--;
@@ -6338,7 +6340,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
  
       } else stage_max--;
@@ -6350,7 +6352,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6367,7 +6369,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6379,7 +6381,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6439,7 +6441,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6451,7 +6453,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6467,7 +6469,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6479,7 +6481,7 @@ skip_bitflip:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6540,7 +6542,7 @@ skip_arith:
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
       if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte);
+          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte);
 
       out_buf[i] = orig;
       stage_cur++;
@@ -6595,7 +6597,7 @@ skip_arith:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6610,7 +6612,7 @@ skip_arith:
         *(u16*)(out_buf + i) = SWAP16(interesting_16[j]);
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 1);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 1);
         stage_cur++;
 
       } else stage_max--;
@@ -6668,7 +6670,7 @@ skip_arith:
 
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6683,7 +6685,7 @@ skip_arith:
         *(u32*)(out_buf + i) = SWAP32(interesting_32[j]);
         if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
         if (use_byte_fitness)
-            cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + 3);
+            cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + 3);
         stage_cur++;
 
       } else stage_max--;
@@ -6751,7 +6753,7 @@ skip_interest:
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
       if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + last_len - 1);
+          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + last_len - 1);
 
       stage_cur++;
 
@@ -6800,7 +6802,7 @@ skip_interest:
         goto abandon_entry;
       }
       if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + extras[j].len - 1);
+          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + extras[j].len - 1);
 
       stage_cur++;
 
@@ -6855,7 +6857,7 @@ skip_user_extras:
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
       if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, seed_burst, stage_cur_byte, stage_cur_byte + last_len - 1);
+          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + last_len - 1);
 
       stage_cur++;
 
@@ -7324,7 +7326,7 @@ havoc_stage:
     
     if (use_byte_fitness){
       update_fitness_in_havoc(queue_cur, orig_in,
-            out_buf, temp_len, seed_burst);
+            out_buf, temp_len);
 
       expire_old_score(queue_cur); // expire old score for every 30 runs
     }
@@ -9097,8 +9099,8 @@ stop_fuzzing:
   fclose(plot_file);
   fclose(churn_file);
 
-  // //plot byte score
-  // plot_byte_score();
+  //plot byte score
+  plot_byte_score();
 
 
   destroy_queue();
