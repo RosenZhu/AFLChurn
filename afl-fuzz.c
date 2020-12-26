@@ -5710,7 +5710,6 @@ static u8 fuzz_one(char** argv) {
 
   s32 third1_stage, third2_stage; // time to update byte alias table
 
-  // double seed_burst;
 
 #ifdef IGNORE_FINDS
 
@@ -5860,8 +5859,6 @@ static u8 fuzz_one(char** argv) {
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
-
-  // seed_burst = calculate_fitness_burst(queue_cur->path_age, queue_cur->path_churn);
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
@@ -9100,7 +9097,7 @@ stop_fuzzing:
   fclose(churn_file);
 
   //plot byte score
-  plot_byte_score();
+  // plot_byte_score();
 
 
   destroy_queue();
