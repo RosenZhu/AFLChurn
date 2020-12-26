@@ -323,8 +323,9 @@ struct queue_entry {
       handicap,                       /* Number of queue cycles behind    */
       depth;                          /* Path depth                       */
   double path_age,                    /* Average age of executed basic blocks. log2(days) */
-         path_churn,                 /* Average number of churns of executed basic blocks */
-         alias_score;                 /* Alias score of a seed; For alias method */
+         path_churn,                  /* Average number of churns of executed basic blocks */
+         alias_score,                 /* Alias score of a seed; For alias method */
+         seed_burst;                  /* burst fitness of a seed according to churn info */
 
   u8* byte_score;          /* possibility to mutate a certain byte, initial is INIT_BYTE_SCORE */
 
@@ -600,18 +601,28 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
   return vburst;
 }
 
-void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burst, 
+void update_seed_burst (void){
+  struct queue_entry *q = queue;
+  while (q){
+    if (!q->cal_failed)
+      q->seed_burst = calculate_fitness_burst(q->path_age, q->path_churn);
+    
+    q = q->next;
+  }
+}
+
+void update_byte_score(struct queue_entry* q, double cur_burst, 
                 s32 start_pos, s32 end_pos){
   double delt = 0.00001;  // float value is approximate
 
-  if (cur_burst > seed_burst + delt){ // larger burst gets higher score
+  if (cur_burst > q->seed_burst + delt){ // larger burst gets higher score
     for (u32 i = start_pos; i <= end_pos; i++){
       if (q->byte_score[i] < 255) // don't overflow
           q->byte_score[i]++;
     }
-  } else if(cur_burst + delt < seed_burst){
+  } else if(cur_burst + delt < q->seed_burst){
     for (u32 i = start_pos; i <= end_pos; i++){
-      if (q->byte_score[i] > 0) // don't overflow
+      if (q->byte_score[i] > 0) // don't underflow
           q->byte_score[i]--;
     }
   }
@@ -621,7 +632,7 @@ void update_byte_score(struct queue_entry* q, double seed_burst, double cur_burs
       the scores will not gravitate to zero */
 void cal_init_seed_byte_score(struct queue_entry* q,
                   s32 byte_start_pos, s32 byte_end_pos){
-  double cur_log2_age, cur_churn, cur_burst, seed_burst;
+  double cur_log2_age, cur_churn, cur_burst;
   u32 end_pos, start_pos;
   u8 num_neighbor_bytes = 0;
 
@@ -642,10 +653,9 @@ void cal_init_seed_byte_score(struct queue_entry* q,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  seed_burst = calculate_fitness_burst(q->path_age, q->path_churn);
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
-  update_byte_score(q, seed_burst, cur_burst, start_pos, end_pos);
+  update_byte_score(q, cur_burst, start_pos, end_pos);
 
 }
 
@@ -671,7 +681,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   
   u32 rem, div, tmp_len;
   u8 group_size = 4;
-  double cur_log2_age, cur_churn, cur_burst, seed_burst;
+  double cur_log2_age, cur_churn, cur_burst;
 
   if (q->len > cur_input_len) tmp_len = cur_input_len;
   else tmp_len = q->len;
@@ -682,7 +692,6 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   cur_log2_age = get_log2days_age();
   cur_churn = get_num_churns();
 
-  seed_burst = calculate_fitness_burst(q->path_age, q->path_churn);
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
 
   /* if one byte in a group with the size group_size changes the fitness,
@@ -692,7 +701,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
     if (memcmp(seed_mem + i * group_size, 
               cur_input_mem + i * group_size, group_size)){
 
-      update_byte_score(q, seed_burst, cur_burst, 
+      update_byte_score(q, cur_burst, 
                 i * group_size, i * group_size + group_size - 1);
 
     }
@@ -702,7 +711,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   if (memcmp(seed_mem + div * group_size, 
               cur_input_mem + div * group_size, rem)){
 
-    update_byte_score(q, seed_burst, cur_burst, 
+    update_byte_score(q, cur_burst, 
                 div * group_size, div * group_size + rem - 1);
   }
 
@@ -1183,8 +1192,7 @@ void create_seed_alias_table(void){
       q->alias_score = 0;
 
     } else {
-      q->alias_score 
-        = calculate_fitness_burst(q->path_age, q->path_churn);
+      q->alias_score = q->seed_burst;
       rela_time = (double)avg_exec_us / q->exec_us;
       rela_log_bitmap = (double)log(q->bitmap_size) / avg_log_bitmap_size;
 
@@ -1367,6 +1375,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->path_age  = 0.0;
   q->path_churn  = 0.0;
   q->alias_score = 0.0;
+  q->seed_burst = 0.0;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -3275,7 +3284,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   update_bitmap_score(q);
 
-  
+  update_seed_burst();
+
   calculate_fitness_burst(q->path_age, q->path_churn);
   fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, show_norm_churn, show_norm_age);
   fflush(churn_file);
@@ -5437,7 +5447,7 @@ static u32 calculate_score(struct queue_entry* q) {
         // score_pow: (0,2)
         score_pow = (rela_p_age + rela_p_churn) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
         burst_factor = pow(2, 5 * (score_pow - 1));
-      //   fitness_score = calculate_fitness_burst(q->path_age, q->path_churn);
+      //   fitness_score = q->seed_burst;
       //   score_pow = fitness_score * (1 - pow(0.05, q->times_selected)) 
       //                       + pow(0.05, q->times_selected);
       //   /* ADD_MAXMIN: fitness_score=(0~2); MUL_MAXMIN: fitness_score=(0~1); 
