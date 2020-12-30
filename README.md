@@ -1,3 +1,14 @@
+# Age/churn distribution
+This branch is only used to check the distribution of age/churn.
+
+It will output the age/churns of every blocks into the folder `-outdir=`.
+
+In fuzzbench:
+- /out/build_bbages.txt
+- /out/build_bbchurns.txt
+
+
+
 # source
 Based on [american fuzzy lop](https://github.com/google/AFL), which is originally developed by Michal Zalewski <lcamtuf@google.com>.
 
