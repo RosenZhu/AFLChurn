@@ -522,9 +522,13 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   std::ofstream build_bbages;
   std::ofstream build_bbchurns;
-  build_bbages.open(OutDirectory + "/build_bbages.txt", std::ofstream::out | std::ofstream::app);
-  build_bbchurns.open(OutDirectory + "/build_bbchurns.txt", std::ofstream::out | std::ofstream::app);
 
+  if (!OutDirectory.empty()){
+    build_bbages.open(OutDirectory + "/build_bbages.txt", std::ofstream::out | std::ofstream::app);
+    build_bbchurns.open(OutDirectory + "/build_bbchurns.txt", std::ofstream::out | std::ofstream::app);
+  }
+
+  
   LLVMContext &C = M.getContext();
   
   Type *VoidTy;
@@ -801,7 +805,9 @@ bool AFLCoverage::runOnModule(Module &M) {
         bb_age_avg = bb_age_total / bb_age_count;
         inst_ages ++;
         module_total_ages += bb_age_avg;
-        build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
+
+        if (!OutDirectory.empty())
+          build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
@@ -836,7 +842,9 @@ bool AFLCoverage::runOnModule(Module &M) {
         bb_burst_avg = bb_burst_total / bb_burst_count;
         inst_changes++;
         module_total_changes += bb_burst_avg;
-        build_bbchurns << bb_burst_avg << std::endl;
+
+        if (!OutDirectory.empty())
+          build_bbchurns << bb_burst_avg << std::endl;
         // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *ChangeLargestType = Int64Ty;
@@ -896,8 +904,10 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  build_bbchurns.close();
-  build_bbages.close();
+  if (!OutDirectory.empty()){
+    build_bbchurns.close();
+    build_bbages.close();
+  }
 
   return true;
 
