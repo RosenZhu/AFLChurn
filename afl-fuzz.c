@@ -634,7 +634,7 @@ void cal_init_seed_byte_score(struct queue_entry* q,
                   s32 byte_start_pos, s32 byte_end_pos){
   double cur_log2_age, cur_churn, cur_burst;
   u32 end_pos, start_pos;
-  u8 num_neighbor_bytes = 0;
+  u8 num_neighbor_bytes = 4;
 
   if (!q->byte_score) return;
 
