@@ -412,11 +412,16 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   if(NULL == fp) return false;
   // get line by line
   while(fscanf(fp, "%lu %u", &unix_time, &line) == 2){
-    days_since_last_change = (head_time - unix_time) / 86400; //days
-    /* Use log2() to reduce the effect of large days. 
-      Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-    if (days_since_last_change < 2) line_age_days[line] = 1;
-    else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+     // just to ensure, should never happen
+    if (head_time < unix_time) line_age_days[line] = 0;
+    else{
+      days_since_last_change = (head_time - unix_time) / 86400; //days
+      /* Use log2() to reduce the effect of large days. 
+        Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
+      if (days_since_last_change < 2) line_age_days[line] = 0;
+      else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+    }
+    
   }
 
   if (!line_age_days.empty())
