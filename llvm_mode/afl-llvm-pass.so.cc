@@ -67,11 +67,6 @@
 
 using namespace llvm;
 
-cl::opt<std::string> OutDirectory(
-    "outdir",
-    cl::desc("Output directory where build_bbages.txt and build_bbchurns.txt are generated."),
-    cl::value_desc("outdir"));
-
 namespace {
 
   class AFLCoverage : public ModulePass {
@@ -536,11 +531,11 @@ bool AFLCoverage::runOnModule(Module &M) {
   std::ofstream build_bbages;
   std::ofstream build_bbchurns;
 
-  if (!OutDirectory.empty()){
-    build_bbages.open(OutDirectory + "/build_bbages.txt", std::ofstream::out | std::ofstream::app);
-    build_bbchurns.open(OutDirectory + "/build_bbchurns.txt", std::ofstream::out | std::ofstream::app);
-  }
-
+  bool isDirExist = false;
+  
+  build_bbages.open("/out/build_bbages.txt", std::ofstream::out | std::ofstream::app);
+  build_bbchurns.open("/out/build_bbchurns.txt", std::ofstream::out | std::ofstream::app);
+  if (build_bbages.is_open()) isDirExist = true;
   
   LLVMContext &C = M.getContext();
   
@@ -819,7 +814,7 @@ bool AFLCoverage::runOnModule(Module &M) {
         inst_ages ++;
         module_total_ages += bb_age_avg;
 
-        if (!OutDirectory.empty())
+        if (isDirExist)
           build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
@@ -856,7 +851,7 @@ bool AFLCoverage::runOnModule(Module &M) {
         inst_changes++;
         module_total_changes += bb_burst_avg;
 
-        if (!OutDirectory.empty())
+        if (isDirExist)
           build_bbchurns << bb_burst_avg << std::endl;
         // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
 #ifdef WORD_SIZE_64
@@ -917,11 +912,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  if (!OutDirectory.empty()){
+
+  if (isDirExist){
     build_bbchurns.close();
     build_bbages.close();
   }
-
   return true;
 
 }
