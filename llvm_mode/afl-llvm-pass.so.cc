@@ -410,7 +410,16 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   unsigned long unix_time;
   unsigned int line, days_since_last_change;
 
-  time_t cur_time = std::time(0);
+  /* Get date (unix time) of HEAD commit */
+  unsigned long head_time;
+  FILE *dfp;
+  std::ostringstream datecmd;
+  datecmd << "cd " << git_directory
+          << " && git show -s --format=%ct HEAD";
+  dfp = popen(datecmd.str().c_str(), "r");
+  if (NULL == dfp) return false;
+  if (fscanf(dfp, "%lu", &head_time) != 1) return false;
+  pclose(dfp);
 
   cmd << "cd " << git_directory << " && git blame --date=unix " << relative_file_path
         << " | grep -o -P \"[0-9]{9}[0-9]? +[0-9]+\"";
@@ -419,11 +428,15 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   if(NULL == fp) return false;
   // get line by line
   while(fscanf(fp, "%lu %u", &unix_time, &line) == 2){
-    days_since_last_change = (cur_time - unix_time) / 86400; //days
-    /* Use log2() to reduce the effect of large days. 
-      Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-    if (days_since_last_change == 0) line_age_days[line] = 0;
-    else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+    // just to ensure, should never happen
+    if (head_time < unix_time) line_age_days[line] = 0;
+    else{
+      days_since_last_change = (head_time - unix_time) / 86400; //days
+      /* Use log2() to reduce the effect of large days. 
+        Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
+      if (days_since_last_change < 2) line_age_days[line] = 0;
+      else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+    }
   }
 
   if (!line_age_days.empty())
