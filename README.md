@@ -47,7 +47,7 @@ e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 
 
 ## run fuzzing
 
-    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -e -Z 1 -- <file_path> [...parameters...]
+    afl-fuzz -i <input_dir> -o <out_dir> -p anneal -e -Z -- <file_path> [...parameters...]
 
 ### option -p
 power schedule. Default: anneal.
@@ -72,29 +72,4 @@ Otherwise, use the original schemes from AFL.
 If `-Z` is set, use alias method to select the next seed based on churns information.
 If `Z` is not set, use the vanilla AFL scheme to select the next seed.
 
-Select the next seed based on the information of exec time or bitmap size.
 
-    -Z 0
-    -Z 1
-    -Z 2
-
-Meaning:
-
-    enum{
-    /* 00 */ ALIAS_TIME,
-    /* 01 */ ALIAS_BITMAP,
-    /* 02 */ ALIAS_TIME_BITMAP,
-    /* 03 */ ALIAS_NONE
-    };
-
-### option -F
-Use `-F` to select how to calculate the fitness score for churn information (how to consider both age and churn).
-
-    -F 0
-
-    enum{
-    /* 00 */ FCA_ADD_MAXMIN,
-    /* 01 */ FCA_ADD_AVERAGE,
-    /* 02 */ FCA_MUL_MAXMIN,
-    /* 03 */ FCA_MUL_AVERAGE
-    };
