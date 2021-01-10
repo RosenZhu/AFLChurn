@@ -31,6 +31,7 @@ We can choose one of the schemes or both of them.
 
 - `export BURST_COMMAND_AGE=1` enables the age of lines using git command.
 - `export BURST_COMMAND_CHURN=1` enables the number of changes of lines using git command.
+- `export BURST_COMMAND_RANK=1` enables the rank of lines.
 
 Install
 
@@ -42,8 +43,9 @@ Install
 
 
 ### About configure
+export BURST_COMMAND_AGE=1
 
-    export BURST_COMMAND_AGE=1
+    export BURST_COMMAND_RANK=1
     export BURST_COMMAND_CHURN=1
     CC=/path/to/aflchurn/afl-clang-fast ./configure [...options...]
     make

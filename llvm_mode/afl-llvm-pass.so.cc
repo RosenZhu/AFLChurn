@@ -446,6 +446,73 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
 
 }
 
+/* get rank of line ages.
+  rank = (the number of commits until HEAD) - (the number of commits until commit A);
+ */
+bool cal_line_age_rank(std::string relative_file_path, std::string git_directory,
+                std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2rank_map,
+                std::map<std::string, unsigned int> &commit2rank){
+
+  char line_commit_sha[256];
+  FILE *dfp, *curdfp;
+  unsigned int nothing_line, line_num;
+  std::map<unsigned int, unsigned int> line_rank;
+
+  /* Get the number of commits before HEAD */
+  unsigned int head_num_parents, cur_num_parents;
+  std::ostringstream headcmd;
+  headcmd << "cd " << git_directory
+          << " && git rev-list --count HEAD";
+  dfp = popen(headcmd.str().c_str(), "r");
+  if (NULL == dfp) return false;
+  if (fscanf(dfp, "%u", &head_num_parents) != 1) return false;
+  pclose(dfp);
+
+  /* output: commit_hash old_line_num current_line_num
+        e.g., 9f1a353f68d6586b898c47c71a7631cdc816215f 167 346
+   */
+  std::ostringstream blamecmd;
+  blamecmd << "cd " << git_directory
+        << " && git blame -p -- " << relative_file_path
+        << " | grep -o \"^[0-9a-f]* [0-9]* [0-9]*\"";
+
+  dfp = popen(blamecmd.str().c_str(), "r");
+  if(NULL == dfp) return false;
+
+  std::ostringstream rankcmd;
+  while (fscanf (dfp, "%s %u %u", line_commit_sha, &nothing_line, &line_num) == 3){
+    std::string str_cmt(line_commit_sha);
+    if (commit2rank.count(str_cmt)){
+      line_rank[line_num] = commit2rank[str_cmt];
+    } else {
+      rankcmd.str("");
+      rankcmd.clear();
+      rankcmd << "cd " << git_directory
+              << " && git rev-list --count "
+              << line_commit_sha;
+      curdfp = popen(rankcmd.str().c_str(), "r");
+      if(NULL == curdfp) continue;
+      if (fscanf (curdfp, "%u", &cur_num_parents) == 1){
+        // just for sure; shouldn't happen
+        if (head_num_parents - cur_num_parents < 0){
+           commit2rank[str_cmt] = line_rank[line_num] = 0;
+        } else{
+          commit2rank[str_cmt] = 
+              line_rank[line_num] = head_num_parents - cur_num_parents;
+        }
+      }
+      pclose(curdfp);
+    }
+    
+  }
+  pclose(dfp);
+
+  if (!line_rank.empty()) file2line2rank_map[relative_file_path] = line_rank;
+  return true;
+  
+}
+
+
 /* Check if file exists in HEAD using command mode.
 return:
     exist: 1; not exist: 0 */
@@ -528,14 +595,15 @@ std::string get_file_path_relative_to_git_dir(std::string relative_file_path,
 
 bool AFLCoverage::runOnModule(Module &M) {
 
-  std::ofstream build_bbages;
+  std::ofstream build_bbages, build_bbranks;
   std::ofstream build_bbchurns;
 
   bool isDirExist = false;
   
   build_bbages.open("/out/build_bbages.txt", std::ofstream::out | std::ofstream::app);
   build_bbchurns.open("/out/build_bbchurns.txt", std::ofstream::out | std::ofstream::app);
-  if (build_bbages.is_open()) isDirExist = true;
+  build_bbranks.open("/out/build_bbranks.txt", std::ofstream::out | std::ofstream::app);
+  if (build_bbranks.is_open()) isDirExist = true;
   
   LLVMContext &C = M.getContext();
   
@@ -583,11 +651,14 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  bool use_cmd_age = false, use_cmd_change = false;
+  bool use_cmd_age = false, use_cmd_change = false, use_cmd_age_rank = false;
 
   
   if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
   if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
+  if (getenv("BURST_COMMAND_RANK")) use_cmd_age_rank = true;
+  // if both age and age_rank are set, use rank
+  if (use_cmd_age && use_cmd_age_rank) use_cmd_age = false;
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -614,8 +685,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   int git_no_found = 1, // 0: found; otherwise, not found
       is_one_commit = 0; // don't calculate for --depth 1
 
+  std::map<std::string, unsigned int> commit_rank;
   // file name (relative path): line NO. , score
-  std::map<std::string, std::map<unsigned int, unsigned int>> map_age_scores, map_bursts_scores;
+  std::map<std::string, std::map<unsigned int, unsigned int>> map_age_scores, map_bursts_scores, map_rank_age;
 
   for (auto &F : M){
     /* Get repository path and object */
@@ -698,6 +770,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       unsigned int bb_age_total = 0, bb_age_avg = 0, bb_age_count = 0;
       unsigned int bb_burst_total = 0, bb_burst_avg = 0, bb_burst_count = 0;
+      unsigned int bb_rank_total = 0, bb_rank_avg = 0, bb_rank_count = 0;
       
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -747,6 +820,8 @@ bool AFLCoverage::runOnModule(Module &M) {
                   /* the ages for lines */
                   if (use_cmd_age) 
                     calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
+                  if (use_cmd_age_rank)
+                    cal_line_age_rank(clean_relative_path, git_path, map_rank_age, commit_rank);
                   /* the number of changes for lines */
                   if (use_cmd_change)
                     calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores);
@@ -758,6 +833,15 @@ bool AFLCoverage::runOnModule(Module &M) {
                     if (map_age_scores[clean_relative_path].count(line)){
                       bb_age_total += map_age_scores[clean_relative_path][line];
                       bb_age_count++;
+                    }
+                  }
+                }
+
+                if (use_cmd_age_rank){
+                  if (map_rank_age.count(clean_relative_path)){
+                   if (map_rank_age[clean_relative_path].count(line)){
+                      bb_rank_total += map_rank_age[clean_relative_path][line];
+                      bb_rank_count++;
                     }
                   }
                 }
@@ -809,13 +893,23 @@ bool AFLCoverage::runOnModule(Module &M) {
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
       /* Add age of lines */
-      if (bb_age_count > 0){ //only when age is assigned
-        bb_age_avg = bb_age_total / bb_age_count;
+      if (bb_age_count > 0 || bb_rank_count > 0){ //only when age is assigned
+        if (bb_age_count > 0)
+          bb_age_avg = bb_age_total / bb_age_count;
+        else if (bb_rank_count > 0){
+          bb_rank_avg = bb_rank_total / bb_rank_count;
+          bb_age_avg = bb_rank_avg;
+        }
+
+        if (isDirExist){
+          if (use_cmd_age)
+            build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
+          else
+            build_bbranks << bb_rank_avg << std::endl;
+        }
+        
         inst_ages ++;
         module_total_ages += bb_age_avg;
-
-        if (isDirExist)
-          build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
         //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
@@ -903,7 +997,10 @@ bool AFLCoverage::runOnModule(Module &M) {
     if (use_cmd_age && !is_one_commit){
         OKF("Using command line git. Instrumented %u BBs with the average of log2(days)=%.2f ages.", 
                   inst_ages, (float)module_ave_ages/WEIGHT_FAC);
-    }
+    } else if (use_cmd_age_rank && !is_one_commit){
+        OKF("Using command line git. Instrumented %u BBs with the average of rank=%u commits.", 
+                  inst_ages, module_ave_ages);
+     }
     if (use_cmd_change && !is_one_commit){
         OKF("Using command line git. Instrumented %u BBs with the average churn of %u churns.",
                     inst_changes, module_ave_chanegs);
@@ -916,6 +1013,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   if (isDirExist){
     build_bbchurns.close();
     build_bbages.close();
+    build_bbranks.close();
   }
   return true;
 
