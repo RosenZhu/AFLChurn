@@ -111,12 +111,6 @@ signal of ages. rdays: 1/days; rdays2: 1/days^2, ...
         rlog2rank
 
 ### option -c
-signal of churn
-
-    -c change
-        logchange
-
-### option -G
 calculation of power schedule:
 
     score_pow = burst_fitness * (1 - pow(0.05, q->times_selected - ptimes_bias)) 
@@ -125,9 +119,18 @@ calculation of power schedule:
 
 Set different ptimes_bias and power_exp
 
-    -G  pe5
+    -c  pe5
         pe4
         pe3
         pe508
+
+### option -G
+
+ADD or MULTIPLY in score_pow = (rela_p_age * rela_p_churn) *(...)
+calculation of power schedule:
+
+    -G add
+        mul
+
         
 

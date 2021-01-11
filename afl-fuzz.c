@@ -111,10 +111,10 @@ enum{
 u8 power_exp = 5; // burst_factor=pow(2, power_exp*(score_pow - pbias) )
 float ptimes_bias = 0; // pow(0.05, q->times_selected - ptimes_bias)
 
-double max_p_age = 0.0,                /* max path age among all seeds */
-       min_p_age = 50.0,               /* minimun path age among all seeds */
-       max_p_churn = 0.0,            /* max path churn among all seeds */
-       min_p_churn = 10000.0;          /* minimun path churn among all seeds */
+double max_p_age = 0,                /* max path age among all seeds */
+       min_p_age = 0,               /* minimun path age among all seeds */
+       max_p_churn = 0,            /* max path churn among all seeds */
+       min_p_churn = 0;          /* minimun path churn among all seeds */
 
 double agg_weight_age = 0, agg_weight_churn = 0; /* aggregate weight */
 size_t calibrated_paths = 0;  /* aggregate count */
@@ -3217,11 +3217,13 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   // anneal: update max and min path weight for all seeds
   if (use_burst_age){
+    if (calibrated_paths == 0) max_p_age = min_p_age = q->path_age;
     if (max_p_age < q->path_age) max_p_age = q->path_age;
     if (min_p_age > q->path_age) min_p_age = q->path_age;
   } else max_p_age = min_p_age = 0;
 
   if (use_burst_churn){
+    if (calibrated_paths == 0) max_p_churn = min_p_churn = q->path_churn;
     if (max_p_churn < q->path_churn) max_p_churn = q->path_churn;
     if (min_p_churn > q->path_churn) min_p_churn = q->path_churn;
   } else max_p_churn = min_p_churn = 0;
@@ -8824,14 +8826,6 @@ int main(int argc, char** argv) {
         break;
 
       case 'c':
-        if (!strcmp(optarg, "change")){
-          churn_signal_type = SIG_CHANGES;
-        } else if (!strcmp(optarg, "logchange")){
-          churn_signal_type = SIG_LOG_CHANGES;
-        }
-        break;
-
-      case 'G':
         if (!strcmp(optarg, "pe5")){
           power_exp = 5;
         } else if (!strcmp(optarg, "pe4")){
@@ -8841,7 +8835,15 @@ int main(int argc, char** argv) {
         } else if(!strcmp(optarg, "pe508")){
           power_exp = 5;
           ptimes_bias = 0.8;
-        } 
+        }
+        break;
+
+      case 'G':
+        if (!strcmp(optarg, "add")){
+          power_add_mul = FITNESS_ADD;
+        } else if (!strcmp(optarg, "mul")){
+          power_add_mul = FITNESS_MUL;
+        }
         break;
       default:
 
