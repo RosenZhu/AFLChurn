@@ -336,11 +336,30 @@
 
 /* Path weight. 8 bytes for ages, 8 bytes for block hit-counts of ages.
    8 bytes for changes, 8 bytes for block hit-counts of changes. 
-   (Or 4 bytes for each in 32-bits system.) */
+   4 bytes for 32-bit system.
+ */
 #define WEIGHT_SHM         32
 
 /* Keep decimal of path weight */
-#define WEIGHT_FAC         100
+#define FACTOR100         100
+#define FACTOR1000        1000
+
+/* age signals */
+enum{
+  /* 00 */ SIG_LOG2_DAYS,   // log2(days)
+  /* 01 */ SIG_LOG10_DAYS,   // log10(days)
+  /* 02 */ SIG_RLOG2_DAYS,    // 1/log2days
+  /* 03 */ SIG_RLOG2_DAYS2,    // 1/(log2days)^2
+  /* 04 */ SIG_RDAYS,   // 1/days
+  /* 05 */ SIG_RANK,      // rank
+  /* 06 */ SIG_LOG2_RANK,     // log2(rank)
+  /* 07 */ SIG_RLOG2_RANK,     // 1/log2(rank)
+};
+/* churn signal */
+enum{
+  /* 00 */ SIG_CHANGES,
+  /* 01 */ SIG_LOG_CHANGES
+};
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 
