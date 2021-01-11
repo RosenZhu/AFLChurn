@@ -304,7 +304,7 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
 /* use git command to get line changes */
 void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
                     std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2change_map,
-                    u8 change_tye){
+                    u8 change_type){
     
   std::ostringstream cmd;
   std::string str_cur_commit_sha;
@@ -364,7 +364,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
 
   /* Get changes */
   if (!lines2changes.empty()){
-    switch(change_tye){
+    switch(change_type){
       case SIG_CHANGES:
         file2line2change_map[relative_file_path] = lines2changes;
         break;

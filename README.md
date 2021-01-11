@@ -21,7 +21,7 @@ We can choose one of the schemes or both of them.
 - `export BURST_COMMAND_AGE=1` enables the age of lines during build process.
 - `export BURST_DAY_SIGNAL=...` select the signal of age. default: log2days
     ```
-    BURST_AGE_SIGNAL=log2days
+    BURST_DAY_SIGNAL=log2days
                     log10days
                     rlog2days
                     rlog2days2
@@ -117,8 +117,17 @@ signal of churn
         logchange
 
 ### option -G
-ADD or MULTIPLY in score_pow = (rela_p_age * rela_p_churn) *(...)
+calculation of power schedule:
 
-    -G add
-        mul
+    score_pow = burst_fitness * (1 - pow(0.05, q->times_selected - ptimes_bias)) 
+                                  + pow(0.05, q->times_selected - ptimes_bias);
+    burst_factor = pow(2, power_exp * (score_pow - pbias));
+
+Set different ptimes_bias and power_exp
+
+    -G  pe5
+        pe4
+        pe3
+        pe508
+        
 
