@@ -371,8 +371,8 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
 
       case SIG_LOG_CHANGES:
         for (auto l2c : lines2changes){
-          if (l2c.second <= 1) tmp_line2changes[l2c.first] = 0;
-          else tmp_line2changes[l2c.first] = log2(l2c.second) * 100; 
+          if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
+          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100; 
         }
         file2line2change_map[relative_file_path] = tmp_line2changes;
         break;
@@ -436,11 +436,11 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
     switch(day_type){
       case SIG_LOG2_DAYS:
         
-        if (days_since_last_change < 2) line_age_days[line] = 0;
+        if (days_since_last_change < 0) line_age_days[line] = 0;
         else{
           /* Use log2() to reduce the effect of large days. 
             Use "[log2(days)] * WEIGHT_FACTOR" to keep more information of age. */
-          line_age_days[line] = log2(days_since_last_change) * 100; // base 2
+          line_age_days[line] = log2(days_since_last_change + 1) * 100; // base 2
         }
         break;
 
@@ -448,19 +448,19 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
         
         /* Use log2() to reduce the effect of large days. 
           Use "[log2(days)] * WEIGHT_FACTOR" to keep more information of age. */
-        if (days_since_last_change < 2) line_age_days[line] = 0;
-        else line_age_days[line] = log10(days_since_last_change) * 1000; // base 10
+        if (days_since_last_change < 0) line_age_days[line] = 0;
+        else line_age_days[line] = log10(days_since_last_change + 2) * 1000; // base 10
         break;
 
       case SIG_RLOG2_DAYS:
-        if (days_since_last_change < 2) line_age_days[line] = 1000;
-        else line_age_days[line] = 1000 / log2(days_since_last_change);
+        if (days_since_last_change < 0) line_age_days[line] = 1000;
+        else line_age_days[line] = 1000 / log2(days_since_last_change + 2);
         break;
 
       case SIG_RLOG2_DAYS2:
-        if (days_since_last_change < 2) line_age_days[line] = 10000;
+        if (days_since_last_change < 0) line_age_days[line] = 10000;
         else line_age_days[line] = 
-                10000 / (log2(days_since_last_change) * log2(days_since_last_change));
+                10000 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
         break;
 
       case SIG_RDAYS:
@@ -546,20 +546,20 @@ bool cal_line_age_rank(std::string relative_file_path, std::string git_directory
             break;
 
           case SIG_LOG2_RANK:
-            if (rank4line < 2){
+            if (rank4line < 0){
               commit2rank[str_cmt] = line_rank[line_num] = 0;
             } else{
               commit2rank[str_cmt] = 
-                  line_rank[line_num] = log2(rank4line) * 100;
+                  line_rank[line_num] = log2(rank4line + 1) * 100;
             }
             break;
 
           case SIG_RLOG2_RANK:
-            if (rank4line < 2){
+            if (rank4line < 0){
               commit2rank[str_cmt] = line_rank[line_num] = 1000;
             } else{
               commit2rank[str_cmt] = 
-                  line_rank[line_num] = 1000 / log2(rank4line);
+                  line_rank[line_num] = 1000 / log2(rank4line + 2);
             }
             break;
         }
@@ -709,7 +709,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   bool use_cmd_age = false, use_cmd_change = false, use_cmd_age_rank = false;
 
   
-  u8 day_signal_type = 0, rank_signal_type = 5, change_signal_type = 0;
+  u8 day_signal_type = 0, rank_signal_type = 5, change_signal_type = 0; // defaults
 
   char *day_sig, *churn_sig, *rank_sig;
   if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
