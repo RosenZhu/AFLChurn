@@ -449,7 +449,7 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
         /* Use log2() to reduce the effect of large days. 
           Use "[log2(days)] * WEIGHT_FACTOR" to keep more information of age. */
         if (days_since_last_change < 0) line_age_days[line] = 0;
-        else line_age_days[line] = log10(days_since_last_change + 2) * 1000; // base 10
+        else line_age_days[line] = log10(days_since_last_change + 1) * 1000; // base 10
         break;
 
       case SIG_RLOG2_DAYS:
