@@ -344,20 +344,10 @@
 #define FACTOR100         100
 #define FACTOR1000        1000
 
-/* age signals */
-enum{
-  /* 00 */ SIG_LOG2_DAYS,   // log2(days)
-  /* 01 */ SIG_LOG10_DAYS,   // log10(days)
-  /* 02 */ SIG_RLOG2_DAYS,    // 1/log2days
-  /* 03 */ SIG_RLOG2_DAYS2,    // 1/(log2days)^2
-  /* 04 */ SIG_RDAYS,   // 1/days
-  /* 05 */ SIG_RANK,      // rank
-  /* 06 */ SIG_LOG2_RANK,     // log2(rank)
-  /* 07 */ SIG_RLOG2_RANK,     // 1/log2(rank)
-};
+
 /* churn signal */
 enum{
-  /* 00 */ SIG_CHANGES,
+  /* 00 */ SIG_XLOG_CHANGES,
   /* 01 */ SIG_LOG_CHANGES
 };
 
