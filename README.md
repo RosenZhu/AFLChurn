@@ -74,13 +74,13 @@ Choose "age" or "churn". Default: both
 
 ### option -e
 Byte score for mutation. 
-If `-e` is set, use the ant colony optimisation for mutation.
-Otherwise, use the original schemes from AFL.
+If `-e` is set, it will not use the ant colony optimisation for mutation.
 
 ### option -Z
 If `-Z` is set, use alias method to select the next seed based on churns information.
 If `Z` is not set, use the vanilla AFL scheme to select the next seed.
 
-
+### option -c
+if `-c` is set, power_exp = 2
         
 

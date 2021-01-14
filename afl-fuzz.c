@@ -112,7 +112,9 @@ double show_factor = 0.0;
 static u8 use_burst_age = 1,    /* Use the age information */
          use_burst_churn = 1;  /* Use the churn information */
 
-u8 use_byte_fitness = 0;  /* use byte score to select bytes; default: not use */
+u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
+
+u8 power_exp = 3; // default
 
 static u32* seed_alias_table;            /* alias method: alias table  */
 static double* seed_alias_probability;   /* alias probability of a seed */
@@ -3446,10 +3448,10 @@ static void perform_dry_run(char** argv) {
   }
 
   if (use_burst_age){
-    OKF ("Initial Log2(Age) is: %.2f.", (max_p_age + min_p_age)/2);
+    OKF ("Initial Age Signal is: %.2f.", (max_p_age + min_p_age)/2);
   }
   if (use_burst_churn){
-    OKF ("Initial NO. Churns is: %.2f.", (max_p_churn + min_p_churn)/2);
+    OKF ("Initial Churns Signal is: %.2f.", (max_p_churn + min_p_churn)/2);
   }
 
   OKF("All test cases processed.");
@@ -5348,7 +5350,7 @@ static u32 calculate_score(struct queue_entry* q) {
         if (max_p_age == min_p_age || min_p_churn == max_p_churn) pbias = 0.5;
         score_pow = burst_fitness * (1 - pow(0.05, q->times_selected)) 
                                   + pow(0.05, q->times_selected);
-        burst_factor = pow(2, 3 * (score_pow - pbias));
+        burst_factor = pow(2, power_exp * (score_pow - pbias));
       }
       
       
@@ -8534,7 +8536,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZ")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc")) > 0)
 
     switch (opt) {
 
@@ -8725,11 +8727,15 @@ int main(int argc, char** argv) {
         break;
 
       case 'e':
-        use_byte_fitness = 1;
+        use_byte_fitness = 0;
         break;
 
       case 'Z':
         alias_seed_selection = 1;
+        break;
+
+      case 'c':
+        power_exp = 2;
         break;
 
       default:
