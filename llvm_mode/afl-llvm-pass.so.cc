@@ -65,6 +65,15 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugInfo.h"
 
+
+
+/* churn signal */
+enum{
+  /* 00 */ SIG_XLOG_CHANGES,
+  /* 01 */ SIG_LOG_CHANGES
+};
+
+
 using namespace llvm;
 
 
@@ -376,7 +385,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
       case SIG_LOG_CHANGES:
         for (auto l2c : lines2changes){
           if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100; 
+          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100;
         }
         file2line2change_map[relative_file_path] = tmp_line2changes;
         break;
@@ -660,7 +669,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   char *churn_sig;
 
+  // if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
+
   if (getenv("BURST_COMMAND_RANK")) use_cmd_age_rank = true;
+
+  // if (use_cmd_age && use_cmd_age_rank) use_cmd_age = false; //keep rank
 
   if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
   churn_sig = getenv("BURST_CHURN_SIGNAL");

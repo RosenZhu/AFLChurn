@@ -36,10 +36,10 @@ Install
     cd llvm_mode
     make clean all
 
-
+Note: `export BURST_COMMAND_AGE=1` is expired.
 
 ### About configure
-export BURST_COMMAND_AGE=1
+Export environmental variables.
     
     export BURST_COMMAND_CHURN=1
     export BURST_COMMAND_RANK=1

@@ -344,13 +344,6 @@
 #define FACTOR100         100
 #define FACTOR1000        1000
 
-
-/* churn signal */
-enum{
-  /* 00 */ SIG_XLOG_CHANGES,
-  /* 01 */ SIG_LOG_CHANGES
-};
-
 /* Maximum allocator request size (keep well under INT_MAX): */
 
 #define MAX_ALLOC           0x40000000
