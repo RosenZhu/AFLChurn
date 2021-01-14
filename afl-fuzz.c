@@ -98,19 +98,6 @@ enum{
   /* 02 */ AVERAGE
 };
 
-u8 age_signal_type = 0;
-
-u8 churn_signal_type = 0;
-
-u8 power_add_mul = 0;
-enum{
-  FITNESS_ADD,
-  FITNESS_MUL
-};
-
-u8 power_exp = 5; // burst_factor=pow(2, power_exp*(score_pow - pbias) )
-float ptimes_bias = 0; // pow(0.05, q->times_selected - ptimes_bias)
-
 double max_p_age = 0,                /* max path age among all seeds */
        min_p_age = 0,               /* minimun path age among all seeds */
        max_p_churn = 0,            /* max path churn among all seeds */
@@ -125,7 +112,9 @@ double show_factor = 0.0;
 static u8 use_burst_age = 1,    /* Use the age information */
          use_burst_churn = 1;  /* Use the churn information */
 
-u8 use_byte_fitness = 0;  /* use byte score to select bytes; default: not use */
+u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
+
+u8 power_exp = 3; // default
 
 static u32* seed_alias_table;            /* alias method: alias table  */
 static double* seed_alias_probability;   /* alias probability of a seed */
@@ -453,7 +442,7 @@ static inline u32 UR(u32 limit) {
 }
 
 /* Get values of ages  */
-double get_log2days_age(){
+double get_rlog2_age_ranks(){
   double vage = 0.0;
 
 #ifdef WORD_SIZE_64
@@ -510,64 +499,22 @@ double calculate_fitness_burst(double cur_age, double cur_churn){
     show_norm_churn = 0.0;
     
   } else {
-    if (max_p_age == min_p_age) rela_p_age = 0;
-    else{
-      /* the smaller age/rank gets higher factor.
-          *R*: 1/ f(days) or 1 / f(ranks) ==> higher one gets higher factor
-       */
-      switch(age_signal_type){
-        // minimize
-        case SIG_LOG2_DAYS: 
-        case SIG_LOG10_DAYS:
-        case SIG_RANK:
-        case SIG_LOG2_RANK:
-          rela_p_age = (max_p_age - cur_age)/(max_p_age - min_p_age);
-          break;
-        // maximize
-        case SIG_RLOG2_DAYS:
-        case SIG_RLOG2_DAYS2:
-        case SIG_RDAYS:
-        case SIG_RLOG2_RANK:
-          rela_p_age = (cur_age - min_p_age)/(max_p_age - min_p_age);
-          break;
-
-        default:
-          rela_p_age = 0;
-      }
-    }
-    if (rela_p_age < 0) rela_p_age = 0;
-    show_norm_age = rela_p_age;
-
-    // the higher churn gets higher factor
-    if (min_p_churn == max_p_churn) rela_p_churn = 0;
-    else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
-    if (rela_p_churn < 0) rela_p_churn = 0;
-    show_norm_churn = rela_p_churn;
-
-    /*
-    // the smaller age gets higher factor
-    if (max_p_age == min_p_age) rela_p_age = 0;
-    else rela_p_age = 1 - (cur_age - min_p_age)/(max_p_age - min_p_age);
-    if (rela_p_age < 0) rela_p_age = 0;
-    show_norm_age = rela_p_age;
-    // the higher churn gets higher factor
-    if (min_p_churn == max_p_churn) rela_p_churn = 0;
-    else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
-    if (rela_p_churn < 0) rela_p_churn = 0;
-    show_norm_churn = rela_p_churn;
+    /* the smaller rank gets higher factor.
+      1 / f(ranks) ==> higher one gets higher factor
     */
-    switch(power_add_mul){
-      case FITNESS_ADD:
-        // burst_factor: (0,2)
-        vburst = rela_p_age + rela_p_churn;
-        break;
+    if (max_p_age == min_p_age) rela_p_age = 0;
+    else rela_p_age = (cur_age - min_p_age)/(max_p_age - min_p_age); // maximize
+    if (rela_p_age < 0) rela_p_age = 0;
+    show_norm_age = rela_p_age;
 
-      case FITNESS_MUL:
-        if (rela_p_age != 0 && rela_p_churn !=0) vburst = rela_p_churn * rela_p_age;
-        else if (rela_p_age == 0) vburst = rela_p_churn;
-        else vburst = rela_p_age;
-        break;
-    }
+    // the higher churn gets higher factor
+    if (min_p_churn == max_p_churn) rela_p_churn = 0;
+    else rela_p_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
+    if (rela_p_churn < 0) rela_p_churn = 0;
+    show_norm_churn = rela_p_churn;
+
+    // burst_factor: (0,2)
+    vburst = rela_p_age + rela_p_churn;
     
   }
 
@@ -624,7 +571,7 @@ void cal_init_seed_byte_score(struct queue_entry* q,
   if ((byte_start_pos - num_neighbor_bytes) < 0) start_pos = 0;
   else start_pos = byte_start_pos - num_neighbor_bytes;
 
-  cur_log2_age = get_log2days_age();
+  cur_log2_age = get_rlog2_age_ranks();
   cur_churn = get_num_churns();
 
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
@@ -663,7 +610,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   rem = tmp_len % group_size;
   div = (tmp_len - rem) / group_size;
 
-  cur_log2_age = get_log2days_age();
+  cur_log2_age = get_rlog2_age_ranks();
   cur_churn = get_num_churns();
 
   cur_burst = calculate_fitness_burst(cur_log2_age, cur_churn);
@@ -3212,7 +3159,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->handicap    = handicap;
   q->cal_failed  = 0;
 
-  q->path_age = get_log2days_age();
+  q->path_age = get_rlog2_age_ranks();
   q->path_churn = get_num_churns();
 
   // anneal: update max and min path weight for all seeds
@@ -3501,10 +3448,10 @@ static void perform_dry_run(char** argv) {
   }
 
   if (use_burst_age){
-    OKF ("Initial Log2(Age) is: %.2f.", (max_p_age + min_p_age)/2);
+    OKF ("Initial Age Signal is: %.2f.", (max_p_age + min_p_age)/2);
   }
   if (use_burst_churn){
-    OKF ("Initial NO. Churns is: %.2f.", (max_p_churn + min_p_churn)/2);
+    OKF ("Initial Churns Signal is: %.2f.", (max_p_churn + min_p_churn)/2);
   }
 
   OKF("All test cases processed.");
@@ -3882,7 +3829,7 @@ keep_as_crash:
                         unique_crashes, kill_signal, describe_op(0));
       
       crash_churn = get_num_churns();
-      crash_age = get_log2days_age();
+      crash_age = get_rlog2_age_ranks();
       calculate_fitness_burst(crash_age, crash_churn);
       fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, show_norm_churn, show_norm_age);
       fflush(churn_file);
@@ -5394,33 +5341,15 @@ static u32 calculate_score(struct queue_entry* q) {
       break;
 
     case ANNEAL:
-      // if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
-      // else {
-      //   // the smaller age gets higher factor
-      //   if (max_p_age == min_p_age){
-      //     rela_p_age = 0;
-      //     pbias = 0.5;
-      //   } else rela_p_age = 1 - (q->path_age - min_p_age)/(max_p_age - min_p_age);
-      //   // the higher churn gets higher factor
-      //   if (min_p_churn == max_p_churn){
-      //      rela_p_churn = 0;
-      //      pbias = 0.5;
-      //   } else rela_p_churn = (q->path_churn - min_p_churn) / (max_p_churn - min_p_churn);
-      //   // score_pow: (0,2)
-      //   score_pow = (rela_p_age + rela_p_churn) * (1 - pow(0.05, q->times_selected)) + pow(0.05, q->times_selected);
-      //   burst_factor = pow(2, 5 * (score_pow - pbias));
-      // }
 
       /* If age or churn is disabled, set the pbias to 0.5;
-          If multiply is set, set the pbias to 0.5;
           The initial pbias=1.0; */
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) burst_factor = 1;
       else {
         burst_fitness = calculate_fitness_burst(q->path_age, q->path_churn);
         if (max_p_age == min_p_age || min_p_churn == max_p_churn) pbias = 0.5;
-        if (power_add_mul == FITNESS_MUL) pbias = 0.5;
-        score_pow = burst_fitness * (1 - pow(0.05, q->times_selected - ptimes_bias)) 
-                                  + pow(0.05, q->times_selected - ptimes_bias);
+        score_pow = burst_fitness * (1 - pow(0.05, q->times_selected)) 
+                                  + pow(0.05, q->times_selected);
         burst_factor = pow(2, power_exp * (score_pow - pbias));
       }
       
@@ -8607,7 +8536,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZa:c:G:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc")) > 0)
 
     switch (opt) {
 
@@ -8798,53 +8727,17 @@ int main(int argc, char** argv) {
         break;
 
       case 'e':
-        use_byte_fitness = 1;
+        use_byte_fitness = 0;
         break;
 
       case 'Z':
         alias_seed_selection = 1;
         break;
 
-      case 'a':
-        if (!strcmp(optarg, "log2days")){
-          age_signal_type = SIG_LOG2_DAYS;
-        } else if (!strcmp(optarg, "log10days")){
-          age_signal_type = SIG_LOG10_DAYS;
-        } else if (!strcmp(optarg, "rlog2days")){
-          age_signal_type = SIG_RLOG2_DAYS;
-        } else if (!strcmp(optarg, "rlog2days2")){
-          age_signal_type = SIG_RLOG2_DAYS2;
-        } else if (!strcmp(optarg, "rdays")){
-          age_signal_type = SIG_RDAYS;
-        } else if (!strcmp(optarg, "rank")){
-          age_signal_type = SIG_RANK;
-        } else if (!strcmp(optarg, "log2rank")){
-          age_signal_type = SIG_LOG2_RANK;
-        } else if (!strcmp(optarg, "rlog2rank")){
-          age_signal_type = SIG_RLOG2_RANK;
-        }
-        break;
-
       case 'c':
-        if (!strcmp(optarg, "pe5")){
-          power_exp = 5;
-        } else if (!strcmp(optarg, "pe4")){
-          power_exp = 4;
-        } else if (!strcmp(optarg, "pe3")){
-          power_exp = 3;
-        } else if(!strcmp(optarg, "pe508")){
-          power_exp = 5;
-          ptimes_bias = 0.8;
-        }
+        power_exp = 2;
         break;
 
-      case 'G':
-        if (!strcmp(optarg, "add")){
-          power_add_mul = FITNESS_ADD;
-        } else if (!strcmp(optarg, "mul")){
-          power_add_mul = FITNESS_MUL;
-        }
-        break;
       default:
 
         usage(argv[0]);

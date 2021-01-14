@@ -18,29 +18,12 @@ LLVM 7.0.1
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
 
-- `export BURST_COMMAND_AGE=1` enables the age of lines during build process.
-- `export BURST_DAY_SIGNAL=...` select the signal of age. default: log2days
-    ```
-    BURST_DAY_SIGNAL=log2days
-                    log10days
-                    rlog2days
-                    rlog2days2
-                    rdays
-                    
-    ```
-
 - `export BURST_COMMAND_RANK=1`
-- `export BURST_RANK_SIGNAL=...` default: rank
-```
-BURST_RANK_SIGNAL=rank
-                log2rank
-                rlog2rank
-```
 
 - `export BURST_COMMAND_CHURN=1` enables the number of changes of lines during build processd.
 - `export BURST_CHURN_SIGNAL=...` select the signal of churn. default: change
     ```
-    BURST_CHURN_SIGNAL=change
+    BURST_CHURN_SIGNAL=xlogchange
                         logchange
     ```
 
@@ -91,46 +74,13 @@ Choose "age" or "churn". Default: both
 
 ### option -e
 Byte score for mutation. 
-If `-e` is set, use the ant colony optimisation for mutation.
-Otherwise, use the original schemes from AFL.
+If `-e` is set, it will not use the ant colony optimisation for mutation.
 
 ### option -Z
 If `-Z` is set, use alias method to select the next seed based on churns information.
 If `Z` is not set, use the vanilla AFL scheme to select the next seed.
 
-### option -a
-signal of ages. rdays: 1/days; rdays2: 1/days^2, ...
-
-    -a log2days
-        log10days
-        rlog2days
-        rlog2days2
-        rdays
-        rank
-        log2rank
-        rlog2rank
-
 ### option -c
-calculation of power schedule:
-
-    score_pow = burst_fitness * (1 - pow(0.05, q->times_selected - ptimes_bias)) 
-                                  + pow(0.05, q->times_selected - ptimes_bias);
-    burst_factor = pow(2, power_exp * (score_pow - pbias));
-
-Set different ptimes_bias and power_exp
-
-    -c  pe5
-        pe4
-        pe3
-        pe508
-
-### option -G
-
-ADD or MULTIPLY in score_pow = (rela_p_age * rela_p_churn) *(...)
-calculation of power schedule:
-
-    -G add
-        mul
-
+if `-c` is set, power_exp = 2
         
 
