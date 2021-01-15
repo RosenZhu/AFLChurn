@@ -114,7 +114,13 @@ static u8 use_burst_age = 1,    /* Use the age information */
 
 u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
 
-u8 scale_exponent = 3; // default
+u8 power_add_mul = 1; // default: mul
+enum{
+  FITNESS_ADD,
+  FITNESS_MUL
+};
+
+u32 scale_exponent = 3; // default
 
 static u32* seed_alias_table;            /* alias method: alias table  */
 static double* seed_alias_probability;   /* alias probability of a seed */
@@ -514,8 +520,21 @@ double calculate_fitness(double cur_age, double cur_churn){
     if (normalized_churn < 0) normalized_churn = 0;
     show_norm_churn = normalized_churn;
 
-    // fitness_factor: (0,2)
-    fitness_factor = normalized_age + normalized_churn;
+    switch(power_add_mul){
+      case FITNESS_ADD:
+        // fitness_factor: (0,2)
+        fitness_factor = normalized_age + normalized_churn;
+        break;
+
+      case FITNESS_MUL:
+        if (normalized_age != 0 && normalized_churn !=0) fitness_factor = normalized_churn * normalized_age;
+        else if (normalized_age == 0) fitness_factor = normalized_churn;
+        else fitness_factor = normalized_age;
+        break;
+      
+      default:
+        PFATAL("Wrong selection of ADD or MUL");
+    }
     
   }
 
@@ -5348,9 +5367,15 @@ static u32 calculate_score(struct queue_entry* q) {
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) energy_factor = 1;
       else {
         fitness = calculate_fitness(q->path_age, q->path_churn);
-        if (max_p_age == min_p_age || min_p_churn == max_p_churn) normalizing_constant = 0.5;
+        // churn or age only
+        if (max_p_age == min_p_age 
+              || min_p_churn == max_p_churn
+              || power_add_mul == FITNESS_MUL) {
+          normalizing_constant = 0.5;
+          scale_exponent *= 2; // keep energy_facotr in the same range
+        }
         energy_exponent = fitness * (1 - pow(0.05, q->times_selected)) 
-                                  + pow(0.05, q->times_selected);
+                                  + normalizing_constant * pow(0.05, q->times_selected);
         energy_factor = pow(2, scale_exponent * (energy_exponent - normalizing_constant));
       }
       
@@ -7832,8 +7857,9 @@ static void usage(u8* argv0) {
       
        "Power schedules:\n\n"
 
-       "  -p            - age or churn\n"
-       "  -b            - test age or churn\n\n"
+       "  -p            - anneal or average or none\n"
+       "  -c N          - set value of scale_exponent\n"
+       "  -b            - age or churn only\n\n"
 
        "Other stuff:\n\n"
 
@@ -8537,7 +8563,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc:G:")) > 0)
 
     switch (opt) {
 
@@ -8736,7 +8762,16 @@ int main(int argc, char** argv) {
         break;
 
       case 'c':
-        scale_exponent = 2;
+        if (sscanf(optarg, "%u", &scale_exponent) < 1) 
+              FATAL("Bad syntax used for -c");
+        break;
+
+      case 'G':
+        if (!strcmp(optarg, "add")){
+          power_add_mul = FITNESS_ADD;
+        } else if (!strcmp(optarg, "mul")){
+          power_add_mul = FITNESS_MUL;
+        }
         break;
 
       default:
@@ -8788,6 +8823,7 @@ int main(int argc, char** argv) {
   if (use_burst_age) OKF ("Using 'age' during fuzzing.");
   if (use_byte_fitness) OKF ("Using Ant Colony Optimization.");
   if (alias_seed_selection) OKF("Select next seeds based on churn info.");
+  OKF("scale_exponent is %u", scale_exponent);
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
