@@ -65,6 +65,15 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugInfo.h"
 
+
+
+/* churn signal */
+enum{
+  /* 00 */ SIG_XLOG_CHANGES,
+  /* 01 */ SIG_LOG_CHANGES
+};
+
+
 using namespace llvm;
 
 
@@ -376,7 +385,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
       case SIG_LOG_CHANGES:
         for (auto l2c : lines2changes){
           if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100; 
+          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100;
         }
         file2line2change_map[relative_file_path] = tmp_line2changes;
         break;
@@ -436,11 +445,11 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   while(fscanf(fp, "%lu %u", &unix_time, &line) == 2){
     days_since_last_change = (head_time - unix_time) / 86400; //days
 
-    if (days_since_last_change < 0) line_age_days[line] = 10000;
-    else line_age_days[line] = 
-        10000 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
-    // if (days_since_last_change <= 0) line_age_days[line] = 10000;
-    // else line_age_days[line] = 10000 / (double)days_since_last_change;
+    // if (days_since_last_change < 0) line_age_days[line] = 10000;
+    // else line_age_days[line] = 
+    //     10000 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
+    if (days_since_last_change <= 0) line_age_days[line] = 10000;
+    else line_age_days[line] = 10000 / (double)days_since_last_change;
     
   }
 
@@ -505,12 +514,18 @@ bool cal_line_age_rank(std::string relative_file_path, std::string git_directory
       if(NULL == curdfp) continue;
       if (fscanf (curdfp, "%u", &cur_num_parents) == 1){
         rank4line = head_num_parents - cur_num_parents;
-        if (rank4line < 0){
-          commit2rank[str_cmt] = line_rank[line_num] = 1000;
-        } else{
-          commit2rank[str_cmt] = 
-              line_rank[line_num] = 1000 / log2(rank4line + 2);
-        }
+        // rlogrank
+        // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 1000;
+        // else commit2rank[str_cmt] = line_rank[line_num] = 1000 / log2(rank4line + 2);
+
+        // log2rank ==> CAUTION: should minimize fitness in afl-fuzz.c
+        // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 0;
+        // else commit2rank[str_cmt] = line_rank[line_num] = log2(rank4line + 1) * 100;
+
+        /* rrank */
+        if (rank4line <= 0) commit2rank[str_cmt] = line_rank[line_num] = 100000;
+        else commit2rank[str_cmt] = line_rank[line_num] = 100000 / rank4line;
+
       }
       pclose(curdfp);
     }
@@ -653,14 +668,24 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  bool use_cmd_change = false, use_cmd_age_rank = false; // use_cmd_age = false,
+  bool use_cmd_change = false, use_cmd_age_rank = false, use_cmd_age = false;
 
   
-  u8 change_signal_type = 1; // defaults
+  u8 change_signal_type = 1; // default: logchange
 
-  char *churn_sig;
+  char *churn_sig, *day_sig;
 
-  if (getenv("BURST_COMMAND_RANK")) use_cmd_age_rank = true;
+  if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
+  day_sig = getenv("BURST_AGE_SIGNAL");
+  if (day_sig){
+    if (!use_cmd_age) FATAL("Please export BURST_COMMAND_AGE=1 first ");
+    if (!strcmp(day_sig, "rrank")){
+      use_cmd_age_rank = true;
+      use_cmd_age = false;
+    } else{
+      FATAL("Set proper age signal");
+    }
+  }
 
   if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
   churn_sig = getenv("BURST_CHURN_SIGNAL");
@@ -833,8 +858,8 @@ bool AFLCoverage::runOnModule(Module &M) {
                   }
                   
                   /* the ages for lines */
-                  // if (use_cmd_age) 
-                  //   calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
+                  if (use_cmd_age) 
+                    calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
                   if (use_cmd_age_rank)
                     cal_line_age_rank(clean_relative_path, git_path, map_rank_age, commit_rank);
                   /* the number of changes for lines */
@@ -843,15 +868,15 @@ bool AFLCoverage::runOnModule(Module &M) {
                   
                 }
                 
-                // if (use_cmd_age){
-                //   // calculate line age
-                //   if (map_age_scores.count(clean_relative_path)){
-                //     if (map_age_scores[clean_relative_path].count(line)){
-                //       bb_age_total += map_age_scores[clean_relative_path][line];
-                //       bb_age_count++;
-                //     }
-                //   }
-                // }
+                if (use_cmd_age){
+                  // calculate line age
+                  if (map_age_scores.count(clean_relative_path)){
+                    if (map_age_scores[clean_relative_path].count(line)){
+                      bb_age_total += map_age_scores[clean_relative_path][line];
+                      bb_age_count++;
+                    }
+                  }
+                }
 
                 if (use_cmd_age_rank){
                   if (map_rank_age.count(clean_relative_path)){
@@ -1000,12 +1025,11 @@ bool AFLCoverage::runOnModule(Module &M) {
     
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
-    // if (use_cmd_age && !is_one_commit){
-      // OKF("Using command line git. Instrumented %u BBs with the average of rlog2days2=%d ages.", 
-      //         inst_ages, module_ave_ages);
-    // } else 
-    if (use_cmd_age_rank && !is_one_commit){
-      OKF("Using command line git. Instrumented %u BBs with the average of 1000/log2(rank)=%d commits.", 
+    if (use_cmd_age && !is_one_commit){
+      OKF("Using command line git. Instrumented %u BBs with the average of f(days)=%d ages.", 
+              inst_ages, module_ave_ages);
+    } else if (use_cmd_age_rank && !is_one_commit){
+      OKF("Using command line git. Instrumented %u BBs with the average of f(rank)=%d commits.", 
                   inst_ages, module_ave_ages);
     }
     if (use_cmd_change && !is_one_commit){

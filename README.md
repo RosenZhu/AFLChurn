@@ -17,8 +17,8 @@ LLVM 7.0.1
 ### install aflchurn
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
-
-- `export BURST_COMMAND_RANK=1`
+- `export BURST_COMMAND_AGE=1`: enable rdays
+- `export BURST_AGE_SIGNAL=rrank`: enable rrank and disable rdays
 
 - `export BURST_COMMAND_CHURN=1` enables the number of changes of lines during build processd.
 - `export BURST_CHURN_SIGNAL=...` select the signal of churn. default: change
@@ -37,12 +37,11 @@ Install
     make clean all
 
 
-
 ### About configure
-export BURST_COMMAND_AGE=1
+Export environmental variables.
     
     export BURST_COMMAND_CHURN=1
-    export BURST_COMMAND_RANK=1
+    export BURST_COMMAND_AGE=1
     CC=/path/to/aflchurn/afl-clang-fast ./configure [...options...]
     make
 
@@ -80,7 +79,21 @@ If `-e` is set, it will not use the ant colony optimisation for mutation.
 If `-Z` is set, use alias method to select the next seed based on churns information.
 If `Z` is not set, use the vanilla AFL scheme to select the next seed.
 
-### option -c
-if `-c` is set, power_exp = 2
-        
+### option -c N
+if `-c` is set, N is scale_exponent in `energy_factor = pow(2, scale_exponent * (energy_exponent - normalizing_constant));`
 
+
+        
+### option -G
+
+ADD or MULTIPLY in score_pow = (rela_p_age * rela_p_churn) *(...)
+calculation of power schedule:
+
+    -G add
+        mul
+
+### option -H
+
+
+### DEFAULT
+pe3, N/days, mul, 100logchange
