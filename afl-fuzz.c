@@ -134,7 +134,7 @@ u8 alias_seed_selection = 0;        /* Use alias method to select next seed base
 // u64 total_input_len = 0;            /* Total length of all seeds */
 double total_log_bitmap_size = 0;       /* Total value of log(bitmap_size) */
 
-double show_norm_churn = 0, show_norm_age = 0;
+// double show_norm_churn = 0, show_norm_age = 0;
 
 /********************    AFL Variables    *********************/
 
@@ -285,7 +285,7 @@ static s32 cpu_aff = -1;       	      /* Selected CPU core                */
 #endif /* HAVE_AFFINITY */
 
 static FILE* plot_file;               /* Gnuplot output file              */
-static FILE* churn_file;              /* plot churn values to file  */
+// static FILE* churn_file;              /* plot churn values to file  */
 
 struct queue_entry {
 
@@ -502,8 +502,8 @@ double calculate_fitness(double cur_age, double cur_churn){
 
   if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)){
     fitness_factor = 1;
-    show_norm_age = 0.0;
-    show_norm_churn = 0.0;
+    // show_norm_age = 0.0;
+    // show_norm_churn = 0.0;
     
   } else {
     /* the smaller rank gets higher factor.
@@ -513,13 +513,13 @@ double calculate_fitness(double cur_age, double cur_churn){
     if (max_p_age == min_p_age) normalized_age = 0;
     else normalized_age = (cur_age - min_p_age)/(max_p_age - min_p_age); // maximize
     if (normalized_age < 0) normalized_age = 0;
-    show_norm_age = normalized_age;
+    // show_norm_age = normalized_age;
 
     // the higher churn gets higher factor
     if (min_p_churn == max_p_churn) normalized_churn = 0;
     else normalized_churn = (cur_churn - min_p_churn) / (max_p_churn - min_p_churn);
     if (normalized_churn < 0) normalized_churn = 0;
-    show_norm_churn = normalized_churn;
+    // show_norm_churn = normalized_churn;
 
     switch(power_add_mul){
       case FITNESS_ADD:
@@ -3211,9 +3211,9 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   update_seed_burst();
 
-  calculate_fitness(q->path_age, q->path_churn);
-  fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, show_norm_churn, show_norm_age);
-  fflush(churn_file);
+  // calculate_fitness(q->path_age, q->path_churn);
+  // fprintf(churn_file, "seed, %.6f, %.6f, %.6f, %.6f\n", q->path_churn, q->path_age, show_norm_churn, show_norm_age);
+  // fflush(churn_file);
 
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
@@ -3704,7 +3704,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
-  double crash_churn, crash_age;
+  // double crash_churn, crash_age;
 
   if (fault == crash_mode) {
 
@@ -3849,11 +3849,11 @@ keep_as_crash:
       fn = alloc_printf("%s/crashes/id:%06llu,sig:%02u,%s", out_dir,
                         unique_crashes, kill_signal, describe_op(0));
       
-      crash_churn = get_num_churns();
-      crash_age = get_normalized_age();
-      calculate_fitness(crash_age, crash_churn);
-      fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, show_norm_churn, show_norm_age);
-      fflush(churn_file);
+      // crash_churn = get_num_churns();
+      // crash_age = get_normalized_age();
+      // calculate_fitness(crash_age, crash_churn);
+      // fprintf(churn_file, "crash, %.6f, %.6f, %.6f, %.6f\n", crash_churn, crash_age, show_norm_churn, show_norm_age);
+      // fflush(churn_file);
 
 #else
 
@@ -7997,15 +7997,15 @@ EXP_ST void setup_dirs_fds(void) {
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
 
-  /* file for the churn values */
-  tmp = alloc_printf("%s/churn_values", out_dir);
-  fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
-  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
-  churn_file = fdopen(fd, "w");
-  if (!churn_file) PFATAL("fdopen churn file failed");
-  // type: seed, crash
-  fprintf(churn_file, "# type, num_churns, log2(days), norm_num_churns, norm_log2days\n");
+  // /* file for the churn values */
+  // tmp = alloc_printf("%s/churn_values", out_dir);
+  // fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  // if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+  // ck_free(tmp);
+  // churn_file = fdopen(fd, "w");
+  // if (!churn_file) PFATAL("fdopen churn file failed");
+  // // type: seed, crash
+  // fprintf(churn_file, "# type, num_churns, log2(days), norm_num_churns, norm_log2days\n");
 
 }
 
@@ -9017,7 +9017,7 @@ stop_fuzzing:
   }
 
   fclose(plot_file);
-  fclose(churn_file);
+  // fclose(churn_file);
 
   //plot byte score
   // plot_byte_score();
