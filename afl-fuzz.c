@@ -121,6 +121,7 @@ enum{
 };
 
 u32 scale_exponent = 3; // default
+float fitness_exponent = 0.05;
 
 static u32* seed_alias_table;            /* alias method: alias table  */
 static double* seed_alias_probability;   /* alias probability of a seed */
@@ -5374,8 +5375,8 @@ static u32 calculate_score(struct queue_entry* q) {
           normalizing_constant = 0.5;
           scale_exponent *= 2; // keep energy_facotr in the same range
         }
-        energy_exponent = fitness * (1 - pow(0.05, q->times_selected)) 
-                                  + normalizing_constant * pow(0.05, q->times_selected);
+        energy_exponent = fitness * (1 - pow(fitness_exponent, q->times_selected)) 
+                                  + normalizing_constant * pow(fitness_exponent, q->times_selected);
         energy_factor = pow(2, scale_exponent * (energy_exponent - normalizing_constant));
       }
       
@@ -8563,7 +8564,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc:G:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc:G:H:")) > 0)
 
     switch (opt) {
 
@@ -8773,6 +8774,10 @@ int main(int argc, char** argv) {
           power_add_mul = FITNESS_MUL;
         }
         break;
+      case 'H':
+        if (sscanf(optarg, "%f", &fitness_exponent) < 1) 
+              FATAL("Bad syntax used for -H");
+        break;
 
       default:
 
@@ -8824,6 +8829,7 @@ int main(int argc, char** argv) {
   if (use_byte_fitness) OKF ("Using Ant Colony Optimization.");
   if (alias_seed_selection) OKF("Select next seeds based on churn info.");
   OKF("scale_exponent is %u", scale_exponent);
+  OKF("fitness_exponent is %f", fitness_exponent);
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
