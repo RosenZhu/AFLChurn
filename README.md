@@ -79,21 +79,19 @@ If `-e` is set, it will not use the ant colony optimisation for mutation.
 If `-Z` is set, use alias method to select the next seed based on churns information.
 If `Z` is not set, use the vanilla AFL scheme to select the next seed.
 
-### option -c N
-if `-c` is set, N is scale_exponent in `energy_factor = pow(2, scale_exponent * (energy_exponent - normalizing_constant));`
+### option -s N
+`-s` sets value of `scale_exponent` in `energy_factor = pow(2, scale_exponent * (2 * energy_exponent - 1));`.
+
+`N` should be an integer.
 
 
-        
-### option -G
+### option -H float
+set `fitness_exponent` in
 
-ADD or MULTIPLY in score_pow = (rela_p_age * rela_p_churn) *(...)
-calculation of power schedule:
-
-    -G add
-        mul
-
-### option -H
-
+```
+fitness * (1 - pow(fitness_exponent, q->times_selected)) 
+        + 0.5 * pow(fitness_exponent, q->times_selected);
+```
 
 ### DEFAULT
 pe3, N/days, mul, 100logchange

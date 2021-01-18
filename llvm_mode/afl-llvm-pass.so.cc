@@ -312,8 +312,7 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
 
 /* use git command to get line changes */
 void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
-                    std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2change_map,
-                    u8 change_type){
+                    std::map<std::string, std::map<unsigned int, unsigned int>> &file2line2change_map){
     
   std::ostringstream cmd;
   std::string str_cur_commit_sha;
@@ -373,24 +372,20 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
 
   /* Get changes */
   if (!lines2changes.empty()){
-    switch(change_type){
-      case SIG_XLOG_CHANGES:
-        for (auto l2c : lines2changes){
-          if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-          else tmp_line2changes[l2c.first] = (l2c.second + 1) * log2(l2c.second + 1); 
-        }
-        file2line2change_map[relative_file_path] = tmp_line2changes;
-        break;
-
-      case SIG_LOG_CHANGES:
-        for (auto l2c : lines2changes){
-          if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-          else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100;
-        }
-        file2line2change_map[relative_file_path] = tmp_line2changes;
-        break;
-        
+    // logchanges
+    for (auto l2c : lines2changes){
+      if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
+      else tmp_line2changes[l2c.first] = log2(l2c.second + 1) * 100;
     }
+    file2line2change_map[relative_file_path] = tmp_line2changes;
+
+    // // xlogchange
+    // for (auto l2c : lines2changes){
+    //   if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
+    //   else tmp_line2changes[l2c.first] = (l2c.second + 1) * log2(l2c.second + 1); 
+    // }
+    // file2line2change_map[relative_file_path] = tmp_line2changes;
+    
   }
   
   rc = pclose(fp);
@@ -670,10 +665,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   bool use_cmd_change = false, use_cmd_age_rank = false, use_cmd_age = false;
 
-  
-  u8 change_signal_type = 1; // default: logchange
-
-  char *churn_sig, *day_sig;
+  char *day_sig;
 
   if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
   day_sig = getenv("BURST_AGE_SIGNAL");
@@ -688,17 +680,6 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
-  churn_sig = getenv("BURST_CHURN_SIGNAL");
-  if (churn_sig){
-    if (!use_cmd_change) FATAL("Please export BURST_COMMAND_CHURN first ");
-    if (!strcmp(churn_sig, "xlogchange")){
-      change_signal_type = SIG_XLOG_CHANGES;
-    } else if (!strcmp(churn_sig, "logchange")){
-      change_signal_type = SIG_LOG_CHANGES;
-    } else{
-      FATAL("Set proper churn signal");
-    }
-  }
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -864,7 +845,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     cal_line_age_rank(clean_relative_path, git_path, map_rank_age, commit_rank);
                   /* the number of changes for lines */
                   if (use_cmd_change)
-                    calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores, change_signal_type);
+                    calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores);
                   
                 }
                 
@@ -1033,17 +1014,8 @@ bool AFLCoverage::runOnModule(Module &M) {
                   inst_ages, module_ave_ages);
     }
     if (use_cmd_change && !is_one_commit){
-      switch (change_signal_type){
-        case SIG_XLOG_CHANGES:
-          OKF("Using command line git. Instrumented %u BBs with the average churn of xlogx=%u churns.",
+      OKF("Using command line git. Instrumented %u BBs with the average churn of log2(changes)*100=%d churns.",
                     inst_changes, module_ave_chanegs);
-          break;
-
-        case SIG_LOG_CHANGES:
-          OKF("Using command line git. Instrumented %u BBs with the average churn of log2(changes)*100=%d churns.",
-                    inst_changes, module_ave_chanegs);
-          break;
-      }
         
     } 
       

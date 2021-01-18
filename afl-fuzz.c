@@ -114,14 +114,8 @@ static u8 use_burst_age = 1,    /* Use the age information */
 
 u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
 
-u8 power_add_mul = 1; // default: mul
-enum{
-  FITNESS_ADD,
-  FITNESS_MUL
-};
-
 u32 scale_exponent = 3; // default
-float fitness_exponent = 0.05;
+float fitness_exponent = 0.3;
 
 static u32* seed_alias_table;            /* alias method: alias table  */
 static double* seed_alias_probability;   /* alias probability of a seed */
@@ -507,7 +501,7 @@ double calculate_fitness(double cur_age, double cur_churn){
     
   } else {
     /* the smaller rank gets higher factor.
-      1 / f(ranks) ==> higher one gets higher factor
+      1 / f(ages) ==> higher one gets higher factor
     */
     // normalized_age = (max_p_age - cur_age)/(max_p_age - min_p_age); // minimize
     if (max_p_age == min_p_age) normalized_age = 0;
@@ -521,21 +515,10 @@ double calculate_fitness(double cur_age, double cur_churn){
     if (normalized_churn < 0) normalized_churn = 0;
     // show_norm_churn = normalized_churn;
 
-    switch(power_add_mul){
-      case FITNESS_ADD:
-        // fitness_factor: (0,2)
-        fitness_factor = normalized_age + normalized_churn;
-        break;
-
-      case FITNESS_MUL:
-        if (normalized_age != 0 && normalized_churn !=0) fitness_factor = normalized_churn * normalized_age;
-        else if (normalized_age == 0) fitness_factor = normalized_churn;
-        else fitness_factor = normalized_age;
-        break;
-      
-      default:
-        PFATAL("Wrong selection of ADD or MUL");
-    }
+    // multiply
+    if (normalized_age != 0 && normalized_churn !=0) fitness_factor = normalized_churn * normalized_age;
+    else if (normalized_age == 0) fitness_factor = normalized_churn;
+    else fitness_factor = normalized_age;
     
   }
 
@@ -5300,7 +5283,7 @@ static u32 calculate_score(struct queue_entry* q) {
 
   double energy_factor = 0, energy_exponent;//, normalized_age, normalized_churn; //, fitness_score
   double avg_weight_age, avg_weight_churn;
-  double normalizing_constant = 1.0, fitness;
+  double fitness;
   
   q->times_selected ++;
 
@@ -5363,23 +5346,13 @@ static u32 calculate_score(struct queue_entry* q) {
 
     case ANNEAL:
 
-      /* If age or churn is disabled, set the normalizing_constant to 0.5;
-          The initial normalizing_constant=1.0; */
       if ((max_p_age == min_p_age) && (max_p_churn == min_p_churn)) energy_factor = 1;
       else {
         fitness = calculate_fitness(q->path_age, q->path_churn);
-        // churn or age only
-        if (max_p_age == min_p_age 
-              || min_p_churn == max_p_churn
-              || power_add_mul == FITNESS_MUL) {
-          normalizing_constant = 0.5;
-          scale_exponent *= 2; // keep energy_facotr in the same range
-        }
         energy_exponent = fitness * (1 - pow(fitness_exponent, q->times_selected)) 
-                                  + normalizing_constant * pow(fitness_exponent, q->times_selected);
-        energy_factor = pow(2, scale_exponent * (energy_exponent - normalizing_constant));
+                                  + 0.5 * pow(fitness_exponent, q->times_selected);
+        energy_factor = pow(2, scale_exponent * (2 * energy_exponent - 1));
       }
-      
       
       break;
 
@@ -7859,7 +7832,7 @@ static void usage(u8* argv0) {
        "Power schedules:\n\n"
 
        "  -p            - anneal or average or none\n"
-       "  -c N          - set value of scale_exponent\n"
+       "  -s N          - set value of scale_exponent\n"
        "  -b            - age or churn only\n\n"
 
        "Other stuff:\n\n"
@@ -8564,7 +8537,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZc:G:H:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qb:p:eZs:G:H:")) > 0)
 
     switch (opt) {
 
@@ -8762,18 +8735,11 @@ int main(int argc, char** argv) {
         alias_seed_selection = 1;
         break;
 
-      case 'c':
+      case 's':
         if (sscanf(optarg, "%u", &scale_exponent) < 1) 
               FATAL("Bad syntax used for -c");
         break;
 
-      case 'G':
-        if (!strcmp(optarg, "add")){
-          power_add_mul = FITNESS_ADD;
-        } else if (!strcmp(optarg, "mul")){
-          power_add_mul = FITNESS_MUL;
-        }
-        break;
       case 'H':
         if (sscanf(optarg, "%f", &fitness_exponent) < 1) 
               FATAL("Bad syntax used for -H");
