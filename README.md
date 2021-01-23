@@ -20,12 +20,8 @@ We can choose one of the schemes or both of them.
 - `export BURST_COMMAND_AGE=1`: enable rdays
 - `export BURST_AGE_SIGNAL=rrank`: enable rrank and disable rdays
 
-- `export BURST_COMMAND_CHURN=1` enables the number of changes of lines during build processd.
-- `export BURST_CHURN_SIGNAL=...` select the signal of churn. default: change
-    ```
-    BURST_CHURN_SIGNAL=xlogchange
-                        logchange
-    ```
+- `export BURST_COMMAND_CHURN=1`: enables the number of changes of lines during build processd.
+
 
 
 
@@ -94,4 +90,4 @@ fitness * (1 - pow(fitness_exponent, q->times_selected))
 ```
 
 ### DEFAULT
-pe3, N/days, mul, 100logchange
+pe3, N/days, mul, 100logchange, Texp0.3
