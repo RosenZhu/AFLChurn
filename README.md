@@ -44,10 +44,7 @@ Install
 
 
 ### About configure
-export BURST_COMMAND_AGE=1
 
-    export BURST_COMMAND_RANK=1
-    export BURST_COMMAND_CHURN=1
     CC=/path/to/aflchurn/afl-clang-fast ./configure [...options...]
     make
 
