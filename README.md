@@ -17,12 +17,10 @@ LLVM 7.0.1
 ### install aflchurn
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
-- `export BURST_COMMAND_AGE=1`: enable rdays
-- `export BURST_AGE_SIGNAL=rrank`: enable rrank and disable rdays
+- `export DISABLE_BURST_AGE=1`: disable rdays
+- `export ENABLE_RANK_AGE=rrank`: enable rrank and disable rdays
 
-- `export BURST_COMMAND_CHURN=1`: enables the number of changes of lines during build processd.
-
-
+- `export DISABLE_BURST_CHURN=1`: disable the number of changes of lines during build processd.
 
 
 Install
@@ -36,8 +34,6 @@ Install
 ### About configure
 Export environmental variables.
     
-    export BURST_COMMAND_CHURN=1
-    export BURST_COMMAND_AGE=1
     CC=/path/to/aflchurn/afl-clang-fast ./configure [...options...]
     make
 
