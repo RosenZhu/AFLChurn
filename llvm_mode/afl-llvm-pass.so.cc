@@ -813,8 +813,8 @@ bool AFLCoverage::runOnModule(Module &M) {
       float bb_age_total = 0, bb_age_avg = 0; unsigned int bb_age_count = 0;
       float bb_burst_total = 0, bb_burst_avg = 0; unsigned int bb_burst_count = 0;
       float bb_rank_total = 0, bb_rank_avg = 0; unsigned int bb_rank_count = 0;
-      float bb_fitness;
-      bool bb_fitness_flag = false;
+      float bb_churn_info;
+      bool bb_churn_info_flag = false;
       
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -950,11 +950,11 @@ bool AFLCoverage::runOnModule(Module &M) {
           inst_ages ++;
           module_total_ages += bb_age_avg;
 
-          bb_fitness = bb_age_avg;
-          bb_fitness_flag = true;
+          bb_churn_info = bb_age_avg;
+          bb_churn_info_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_fitness;
+          module_total_fitness += bb_churn_info;
           // //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg << std::endl;
           // Constant *MapAgeLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
           // Constant *MapAgeCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
@@ -982,11 +982,11 @@ bool AFLCoverage::runOnModule(Module &M) {
           inst_changes++;
           module_total_changes += bb_burst_avg;
 
-          bb_fitness = bb_burst_avg;
-          bb_fitness_flag = true;
+          bb_churn_info = bb_burst_avg;
+          bb_churn_info_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_fitness;
+          module_total_fitness += bb_churn_info;
           // // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
           // Constant *MapChangeLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
           // Constant *MapChangeCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
@@ -1028,20 +1028,20 @@ bool AFLCoverage::runOnModule(Module &M) {
         }
         // combine
         if (bb_burst_count > 0 || bb_age_count > 0 || bb_rank_count > 0){
-          bb_fitness = bb_burst_avg * bb_age_avg;
-          bb_fitness_flag = true;
+          bb_churn_info = bb_burst_avg * bb_age_avg;
+          bb_churn_info_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_fitness;
+          module_total_fitness += bb_churn_info;
         }
         
       }
 
-      if (bb_fitness_flag) {
+      if (bb_churn_info_flag) {
         Constant *MapLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
         Constant *MapCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
-        Constant *Weight = ConstantFP::get(FloatTy, bb_fitness);
-        // add to shm, age
+        Constant *Weight = ConstantFP::get(FloatTy, bb_churn_info);
+        // add to shm, churn info
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapLoc);
         LoadInst *MapWt = IRB.CreateLoad(FloatTy, MapWtPtr);
         MapWt->setMetadata(NoSanMetaId, NoneMetaNode);

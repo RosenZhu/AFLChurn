@@ -219,6 +219,7 @@ EXP_ST u64 total_crashes,             /* Total number of crashes          */
            unique_tmouts,             /* Timeouts with unique signatures  */
            unique_hangs,              /* Hangs with unique signatures     */
            total_execs,               /* Total execve() calls             */
+           total_aco_updates,         /* Total ACO score updates          */
            slowest_exec_ms,           /* Slowest testcase non hang in ms  */
            start_time,                /* Unix start time (ms)             */
            last_path_time,            /* Time for most recent path (ms)   */
@@ -512,13 +513,14 @@ void cal_init_seed_byte_score(struct queue_entry* q,
   cur_fitness = calculate_fitness(cur_inst_churn);
 
   update_byte_score(q, cur_fitness, start_pos, end_pos);
+  total_aco_updates++;
 
 }
 
 /* expire old scores */
 void expire_old_score(struct queue_entry* q){
   
-  if (!(total_execs % ACO_FREQENCY)){
+  if (!(total_aco_updates % ACO_FREQENCY)){
     if (q->byte_score){
       for (int i = 0; i < q->len; i++){
         /* gravitate to INIT_BYTE_SCORE */
@@ -568,6 +570,8 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
       update_byte_score(q, cur_fitness, q->len - rem, q->len - 1);
     }
   }
+
+  total_aco_updates++;
 
 }
 
