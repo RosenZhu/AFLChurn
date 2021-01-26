@@ -902,7 +902,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
         if (isDirExist){
           if (use_cmd_age)
-            build_bbages << (double)bb_age_avg << std::endl;
+            build_bbages << bb_age_avg << std::endl;
           else
             build_bbranks << bb_rank_avg << std::endl;
         }

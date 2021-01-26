@@ -29,6 +29,7 @@ LLVM 7.0.1
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
 
+- Default: days and changes are enabled
 - `export DISABLE_BURST_AGE=1`: disable days
 - `export DISABLE_BURST_CHURN=1`: disable the number of changes of lines during build processd.
 - `export BURST_COMMAND_RANK=1` enables the rank of lines, and disable days.
