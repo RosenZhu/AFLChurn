@@ -470,7 +470,7 @@ double get_log2days_age(){
   u64 *pAgeWt = (u64 *)(trace_bits + MAP_SIZE);
   u64 *pAgeCnt = (u64 *)(trace_bits + MAP_SIZE + 8);
   if ((*pAgeCnt) != 0){
-    vage = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
+    vage = ((double)(*pAgeWt) / (*pAgeCnt));
   }
 
 #else
@@ -478,7 +478,7 @@ double get_log2days_age(){
   u32 *pAgeWt = (u32 *)(trace_bits + MAP_SIZE);
   u32 *pAgeCnt = (u32 *)(trace_bits + MAP_SIZE + 4);
   if ((*pAgeCnt) != 0){
-    vage = ((double)(*pAgeWt) / (*pAgeCnt)) / (double)WEIGHT_FAC;
+    vage = ((double)(*pAgeWt) / (*pAgeCnt));
   }
 
 #endif

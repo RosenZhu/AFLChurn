@@ -427,10 +427,8 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
     if (head_time < unix_time) line_age_days[line] = 0;
     else{
       days_since_last_change = (head_time - unix_time) / 86400; //days
-      /* Use log2() to reduce the effect of large days. 
-        Use "[log2(days)] * WEIGHT_FAC" to keep more information of age. */
-      if (days_since_last_change < 2) line_age_days[line] = 0;
-      else line_age_days[line] = (log(days_since_last_change) / log(2)) * WEIGHT_FAC; // base 2
+      if (days_since_last_change < 0) line_age_days[line] = 0;
+      else line_age_days[line] = days_since_last_change;
     }
   }
 
@@ -651,14 +649,15 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  bool use_cmd_age = false, use_cmd_change = false, use_cmd_age_rank = false;
+  bool use_cmd_age = true, use_cmd_change = true, use_cmd_age_rank = false;
 
   
-  if (getenv("BURST_COMMAND_AGE")) use_cmd_age = true;
-  if (getenv("BURST_COMMAND_CHURN")) use_cmd_change = true;
-  if (getenv("BURST_COMMAND_RANK")) use_cmd_age_rank = true;
-  // if both age and age_rank are set, use rank
-  if (use_cmd_age && use_cmd_age_rank) use_cmd_age = false;
+  if (getenv("DISABLE_BURST_AGE")) use_cmd_age = false;
+  if (getenv("DISABLE_BURST_CHURN")) use_cmd_change = false;
+  if (getenv("BURST_COMMAND_RANK")){
+    use_cmd_age_rank = true;
+    use_cmd_age = false;
+  }
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -903,14 +902,14 @@ bool AFLCoverage::runOnModule(Module &M) {
 
         if (isDirExist){
           if (use_cmd_age)
-            build_bbages << (double)bb_age_avg/WEIGHT_FAC << std::endl;
+            build_bbages << (double)bb_age_avg << std::endl;
           else
             build_bbranks << bb_rank_avg << std::endl;
         }
         
         inst_ages ++;
         module_total_ages += bb_age_avg;
-        //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg/WEIGHT_FAC << std::endl;
+        //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg << std::endl;
 #ifdef WORD_SIZE_64
         Type *AgeLargestType = Int64Ty;
         Constant *MapAgeLoc = ConstantInt::get(AgeLargestType, MAP_SIZE);
@@ -995,8 +994,8 @@ bool AFLCoverage::runOnModule(Module &M) {
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
     if (use_cmd_age && !is_one_commit){
-        OKF("Using command line git. Instrumented %u BBs with the average of log2(days)=%.2f ages.", 
-                  inst_ages, (float)module_ave_ages/WEIGHT_FAC);
+        OKF("Using command line git. Instrumented %u BBs with the average of days=%d ages.", 
+                  inst_ages, module_ave_ages);
     } else if (use_cmd_age_rank && !is_one_commit){
         OKF("Using command line git. Instrumented %u BBs with the average of rank=%u commits.", 
                   inst_ages, module_ave_ages);

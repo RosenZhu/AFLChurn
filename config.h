@@ -338,9 +338,6 @@
    (Or 4 bytes for each in 32-bits system.) */
 #define WEIGHT_SHM         32
 
-/* Keep decimal of path weight */
-#define WEIGHT_FAC         100
-
 /* Maximum allocator request size (keep well under INT_MAX): */
 
 #define MAX_ALLOC           0x40000000
