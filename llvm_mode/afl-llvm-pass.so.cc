@@ -955,25 +955,6 @@ bool AFLCoverage::runOnModule(Module &M) {
 
           inst_fitness ++;
           module_total_fitness += bb_churn_info;
-          // //std::cout << "block id: "<< cur_loc << ", bb age: " << (float)bb_age_avg << std::endl;
-          // Constant *MapAgeLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
-          // Constant *MapAgeCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
-          // Constant *AgeWeight = ConstantFP::get(FloatTy, bb_age_avg);
-          // // add to shm, age
-          // Value *MapAgeWtPtr = IRB.CreateGEP(MapPtr, MapAgeLoc);
-          // LoadInst *MapAgeWt = IRB.CreateLoad(FloatTy, MapAgeWtPtr);
-          // MapAgeWt->setMetadata(NoSanMetaId, NoneMetaNode);
-          // Value *IncAgeWt = IRB.CreateFAdd(MapAgeWt, AgeWeight);
-          // IRB.CreateStore(IncAgeWt, MapAgeWtPtr)
-          //   ->setMetadata(NoSanMetaId, NoneMetaNode);
-
-          // // add to shm, block count
-          // Value *MapAgeCntPtr = IRB.CreateGEP(MapPtr, MapAgeCntLoc);
-          // LoadInst *MapAgeCnt = IRB.CreateLoad(Int32Ty, MapAgeCntPtr);
-          // MapAgeCnt->setMetadata(NoSanMetaId, NoneMetaNode);
-          // Value *IncAgeCnt = IRB.CreateAdd(MapAgeCnt, ConstantInt::get(Int32Ty, 1));
-          // IRB.CreateStore(IncAgeCnt, MapAgeCntPtr)
-          //         ->setMetadata(NoSanMetaId, NoneMetaNode);
         }
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
@@ -987,24 +968,6 @@ bool AFLCoverage::runOnModule(Module &M) {
 
           inst_fitness ++;
           module_total_fitness += bb_churn_info;
-          // // std::cout << "block id: "<< cur_loc << ", bb change: " << bb_burst_avg << std::endl;
-          // Constant *MapChangeLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
-          // Constant *MapChangeCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
-          // Constant *ChangeWeight = ConstantFP::get(FloatTy, bb_burst_avg);
-          // // add to shm, changes
-          // Value *MapChangeWtPtr = IRB.CreateGEP(MapPtr, MapChangeLoc);
-          // LoadInst *MapChangeWt = IRB.CreateLoad(FloatTy, MapChangeWtPtr);
-          // MapChangeWt->setMetadata(NoSanMetaId, NoneMetaNode);
-          // Value *IncChangeWt = IRB.CreateFAdd(MapChangeWt, ChangeWeight);
-          // IRB.CreateStore(IncChangeWt, MapChangeWtPtr)
-          //   ->setMetadata(NoSanMetaId, NoneMetaNode);
-          // // add to shm, block count
-          // Value *MapChangeCntPtr = IRB.CreateGEP(MapPtr, MapChangeCntLoc);
-          // LoadInst *MapChangeCnt = IRB.CreateLoad(Int32Ty, MapChangeCntPtr);
-          // MapChangeCnt->setMetadata(NoSanMetaId, NoneMetaNode);
-          // Value *IncChangeCnt = IRB.CreateAdd(MapChangeCnt, ConstantInt::get(Int32Ty, 1));
-          // IRB.CreateStore(IncChangeCnt, MapChangeCntPtr)
-          //         ->setMetadata(NoSanMetaId, NoneMetaNode);
         }
       } else if ((use_cmd_age || use_cmd_age_rank) && use_cmd_change){
         /* both age and change are enabled */
@@ -1089,7 +1052,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     inst_changes, module_ave_chanegs);
     } 
 
-    OKF("BB Fitness. Instrumented %u BBs with average fitness of %.6f",
+    OKF("BB Churn info. Instrumented %u BBs with average churn of %.6f",
                     inst_fitness, module_ave_fitness);
       
 
