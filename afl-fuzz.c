@@ -479,7 +479,7 @@ void update_seed_fitness (void){
 }
 
 /* update byte score for group of 4 bytes at the same time */
-inline void update_byte_score_deterministic(struct queue_entry* q, double cur_fitness, 
+static inline void update_byte_score_deterministic(struct queue_entry* q, double cur_fitness, 
                 s32 start_pos, s32 end_pos){
   double delt = 0.0000001;  // float value is approximate
 
@@ -497,7 +497,7 @@ inline void update_byte_score_deterministic(struct queue_entry* q, double cur_fi
 }
 
 /* update byte score for group of 4 bytes at the same time */
-inline void update_byte_score_havoc(struct queue_entry* q, double cur_fitness,
+static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fitness,
                           u32* one_group_byte_score){
   double delt = 0.0000001;  // float value is approximate
   u8* byte_score = (u8*)one_group_byte_score;
