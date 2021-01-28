@@ -334,15 +334,10 @@
 #define INIT_BYTE_SCORE    128
 
 
-/* Path weight. 8 bytes for ages, 8 bytes for block hit-counts of ages.
-   8 bytes for changes, 8 bytes for block hit-counts of changes. 
-   4 bytes for 32-bit system.
+/* Shared memory for Path weight. 
+8 bytes for weight (double); 8 for count (integer).
  */
-#define WEIGHT_SHM         32
-
-/* Keep decimal of path weight */
-#define FACTOR100         100
-#define FACTOR1000        1000
+#define WEIGHT_SHM         16
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 
