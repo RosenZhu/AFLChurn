@@ -438,7 +438,14 @@ double get_raw_fitness_of_executed_input(){
   double inst_raw_fitness = 0.0;
 
   double *sum_raw_fitness = (double *)(trace_bits + MAP_SIZE);
+
+#ifdef WORD_SIZE_64
   u64 *count_raw_fitness = (u64 *)(trace_bits + MAP_SIZE + 8);
+
+#else
+  u32 *count_raw_fitness = (u32 *)(trace_bits + MAP_SIZE + 8);
+
+#endif
 
   if ((*count_raw_fitness) != 0){ 
     inst_raw_fitness = (*sum_raw_fitness) / (*count_raw_fitness);
@@ -567,7 +574,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   /* if one byte in a group with the size group_size changes the fitness,
       other bytes in the group have the same change. 
    */
-  u32 rem = q->len % 4;
+  // u32 rem = q->len % 4;
   u32 i = (q->len >> 2);
   
   u32* group_seed = ((u32*)seed_mem);
@@ -579,8 +586,8 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   cur_fitness = normalize_fitness(cur_raw_fitness);
 
   while(i--){
-    if ((*(group_seed + i)) != (*(group_cur_input + i))){
-      update_byte_score_havoc(q, cur_fitness, group_byte_score + i);
+    if ((*(group_seed++)) != (*(group_cur_input++))){
+      update_byte_score_havoc(q, cur_fitness, group_byte_score++);
     }
   }
   // /* for the remainder bytes */

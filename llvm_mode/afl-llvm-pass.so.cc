@@ -1007,9 +1007,10 @@ bool AFLCoverage::runOnModule(Module &M) {
       }
 
       if (bb_raw_fitness_flag) {
-        Constant *MapLoc = ConstantInt::get(Int64Ty, MAP_SIZE);
-        Constant *MapCntLoc = ConstantInt::get(Int64Ty, MAP_SIZE + 8);
         Constant *Weight = ConstantFP::get(DoubleTy, bb_raw_fitness);
+        Constant *MapLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
+        Constant *MapCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 8);
+        
         // add to shm, churn raw fitness
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapLoc);
         LoadInst *MapWt = IRB.CreateLoad(DoubleTy, MapWtPtr);
@@ -1019,12 +1020,22 @@ bool AFLCoverage::runOnModule(Module &M) {
           ->setMetadata(NoSanMetaId, NoneMetaNode);
 
         // add to shm, block count
+#ifdef WORD_SIZE_64
         Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
         LoadInst *MapCnt = IRB.CreateLoad(Int64Ty, MapCntPtr);
         MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
         Value *IncCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int64Ty, 1));
         IRB.CreateStore(IncCnt, MapCntPtr)
                 ->setMetadata(NoSanMetaId, NoneMetaNode);
+#else
+        Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
+        LoadInst *MapCnt = IRB.CreateLoad(Int32Ty, MapCntPtr);
+        MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
+        Value *IncCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int32Ty, 1));
+        IRB.CreateStore(IncCnt, MapCntPtr)
+                ->setMetadata(NoSanMetaId, NoneMetaNode);
+
+#endif
       }
 
       inst_blocks++;
