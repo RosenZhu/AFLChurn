@@ -312,7 +312,7 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
 
 /* use git command to get line changes */
 void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
-                    std::map<std::string, std::map<unsigned int, float>> &file2line2change_map){
+                    std::map<std::string, std::map<unsigned int, double>> &file2line2change_map){
     
   std::ostringstream cmd;
   std::string str_cur_commit_sha;
@@ -321,7 +321,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   FILE *fp;
   std::set<unsigned int> changed_lines_cur_commit;
   std::map <unsigned int, unsigned int> lines2changes;
-  std::map <unsigned int, float> tmp_line2changes;
+  std::map <unsigned int, double> tmp_line2changes;
   
   // get the commits that change the file of relative_file_path
   // result: commit short SHAs
@@ -376,14 +376,14 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
     // logchanges
     for (auto l2c : lines2changes){
       if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-      else tmp_line2changes[l2c.first] = log2f(l2c.second + 1);
+      else tmp_line2changes[l2c.first] = log2(l2c.second + 1);
     }
     file2line2change_map[relative_file_path] = tmp_line2changes;
 
     // // xlogchange
     // for (auto l2c : lines2changes){
     //   if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-    //   else tmp_line2changes[l2c.first] = (l2c.second + 1) * log2f(l2c.second + 1); 
+    //   else tmp_line2changes[l2c.first] = (l2c.second + 1) * log2(l2c.second + 1); 
     // }
     // file2line2change_map[relative_file_path] = tmp_line2changes;
     
@@ -401,9 +401,9 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   git_directory: /home/usrname/repo/
 */
 bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
-                    std::map<std::string, std::map<unsigned int, float>> &file2line2age_map){
+                    std::map<std::string, std::map<unsigned int, double>> &file2line2age_map){
 
-  std::map<unsigned int, float> line_age_days;
+  std::map<unsigned int, double> line_age_days;
 
   /*
   getting pairs [unix_time line_number]
@@ -453,12 +453,15 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
 
     // if (days_since_last_change < 0) line_age_days[line] = 1;
     // else line_age_days[line] = 
-    //     1 / (log2f(days_since_last_change + 2) * log2f(days_since_last_change + 2));
+    //     1 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
 
     /* Normalize 1/days */
-    if (days_since_last_change <= 0 || max_days <= 1) line_age_days[line] = 1;
+    if (days_since_last_change <= 0 || max_days <= 1) {
+      line_age_days[line] = 1;
+      WARNF("Current days are less than 0 or maximum days are less then 1.");
+    }
     else{
-      line_age_days[line] = (float)(max_days - days_since_last_change) / 
+      line_age_days[line] = (double)(max_days - days_since_last_change) / 
                               (days_since_last_change * (max_days - 1));
     }
     
@@ -480,13 +483,13 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   rank = (the number of commits until HEAD) - (the number of commits until commit A);
  */
 bool cal_line_age_rank(std::string relative_file_path, std::string git_directory,
-                std::map<std::string, std::map<unsigned int, float>> &file2line2rank_map,
-                std::map<std::string, float> &commit2rank){
+                std::map<std::string, std::map<unsigned int, double>> &file2line2rank_map,
+                std::map<std::string, double> &commit2rank){
 
   char line_commit_sha[256];
   FILE *dfp, *curdfp;
   unsigned int nothing_line, line_num;
-  std::map<unsigned int, float> line_rank;
+  std::map<unsigned int, double> line_rank;
 
   /* Get the number of commits before HEAD */
   unsigned int head_num_parents, cur_num_parents;
@@ -527,15 +530,18 @@ bool cal_line_age_rank(std::string relative_file_path, std::string git_directory
         rank4line = head_num_parents - cur_num_parents;
         // rlogrank
         // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 1;
-        // else commit2rank[str_cmt] = line_rank[line_num] = 1 / log2f(rank4line + 2);
+        // else commit2rank[str_cmt] = line_rank[line_num] = 1 / log2(rank4line + 2);
 
         // log2rank ==> CAUTION: should minimize fitness in afl-fuzz.c
         // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 0;
-        // else commit2rank[str_cmt] = line_rank[line_num] = log2f(rank4line + 1);
+        // else commit2rank[str_cmt] = line_rank[line_num] = log2(rank4line + 1);
 
         /* rrank */
-        if (rank4line <= 0) commit2rank[str_cmt] = line_rank[line_num] = 1;
-        else commit2rank[str_cmt] = line_rank[line_num] = 1 / (float)rank4line;
+        if (rank4line <= 0) {
+          commit2rank[str_cmt] = line_rank[line_num] = 1;
+          WARNF("Rank of lines is less than 0.");
+        }
+        else commit2rank[str_cmt] = line_rank[line_num] = 1 / (double)rank4line;
 
       }
       pclose(curdfp);
@@ -715,7 +721,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   /* Instrument all the things! */
 
   int inst_blocks = 0, inst_ages = 0, inst_changes = 0, inst_fitness = 0;
-  float module_total_ages = 0, module_total_changes = 0, module_total_fitness = 0,
+  double module_total_ages = 0, module_total_changes = 0, module_total_fitness = 0,
       module_ave_ages = 0, module_ave_chanegs = 0, module_ave_fitness = 0;
  
 
@@ -727,9 +733,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   int git_no_found = 1, // 0: found; otherwise, not found
       is_one_commit = 0; // don't calculate for --depth 1
 
-  std::map<std::string, float> commit_rank;
+  std::map<std::string, double> commit_rank;
   // file name (relative path): line NO. , score
-  std::map<std::string, std::map<unsigned int, float>> map_age_scores, map_bursts_scores, map_rank_age;
+  std::map<std::string, std::map<unsigned int, double>> map_age_scores, map_bursts_scores, map_rank_age;
 
   for (auto &F : M){
     /* Get repository path and object */
@@ -810,11 +816,11 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      float bb_age_total = 0, bb_age_avg = 0; unsigned int bb_age_count = 0;
-      float bb_burst_total = 0, bb_burst_avg = 0; unsigned int bb_burst_count = 0;
-      float bb_rank_total = 0, bb_rank_avg = 0; unsigned int bb_rank_count = 0;
-      float bb_churn_info;
-      bool bb_churn_info_flag = false;
+      double bb_age_total = 0, bb_age_avg = 0; unsigned int bb_age_count = 0;
+      double bb_burst_total = 0, bb_burst_avg = 0; unsigned int bb_burst_count = 0;
+      double bb_rank_total = 0, bb_rank_avg = 0; unsigned int bb_rank_count = 0;
+      double bb_raw_fitness;
+      bool bb_raw_fitness_flag = false;
       
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -950,11 +956,11 @@ bool AFLCoverage::runOnModule(Module &M) {
           inst_ages ++;
           module_total_ages += bb_age_avg;
 
-          bb_churn_info = bb_age_avg;
-          bb_churn_info_flag = true;
+          bb_raw_fitness = bb_age_avg;
+          bb_raw_fitness_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_churn_info;
+          module_total_fitness += bb_raw_fitness;
         }
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
@@ -963,11 +969,11 @@ bool AFLCoverage::runOnModule(Module &M) {
           inst_changes++;
           module_total_changes += bb_burst_avg;
 
-          bb_churn_info = bb_burst_avg;
-          bb_churn_info_flag = true;
+          bb_raw_fitness = bb_burst_avg;
+          bb_raw_fitness_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_churn_info;
+          module_total_fitness += bb_raw_fitness;
         }
       } else if ((use_cmd_age || use_cmd_age_rank) && use_cmd_change){
         /* both age and change are enabled */
@@ -991,32 +997,32 @@ bool AFLCoverage::runOnModule(Module &M) {
         }
         // combine
         if (bb_burst_count > 0 || bb_age_count > 0 || bb_rank_count > 0){
-          bb_churn_info = bb_burst_avg * bb_age_avg;
-          bb_churn_info_flag = true;
+          bb_raw_fitness = bb_burst_avg * bb_age_avg;
+          bb_raw_fitness_flag = true;
 
           inst_fitness ++;
-          module_total_fitness += bb_churn_info;
+          module_total_fitness += bb_raw_fitness;
         }
         
       }
 
-      if (bb_churn_info_flag) {
-        Constant *MapLoc = ConstantInt::get(Int32Ty, MAP_SIZE);
-        Constant *MapCntLoc = ConstantInt::get(Int32Ty, MAP_SIZE + 4);
-        Constant *Weight = ConstantFP::get(FloatTy, bb_churn_info);
-        // add to shm, churn info
+      if (bb_raw_fitness_flag) {
+        Constant *MapLoc = ConstantInt::get(Int64Ty, MAP_SIZE);
+        Constant *MapCntLoc = ConstantInt::get(Int64Ty, MAP_SIZE + 8);
+        Constant *Weight = ConstantFP::get(DoubleTy, bb_raw_fitness);
+        // add to shm, churn raw fitness
         Value *MapWtPtr = IRB.CreateGEP(MapPtr, MapLoc);
-        LoadInst *MapWt = IRB.CreateLoad(FloatTy, MapWtPtr);
+        LoadInst *MapWt = IRB.CreateLoad(DoubleTy, MapWtPtr);
         MapWt->setMetadata(NoSanMetaId, NoneMetaNode);
-        Value *IncAgeWt = IRB.CreateFAdd(MapWt, Weight);
-        IRB.CreateStore(IncAgeWt, MapWtPtr)
+        Value *IncWt = IRB.CreateFAdd(MapWt, Weight);
+        IRB.CreateStore(IncWt, MapWtPtr)
           ->setMetadata(NoSanMetaId, NoneMetaNode);
 
         // add to shm, block count
         Value *MapCntPtr = IRB.CreateGEP(MapPtr, MapCntLoc);
-        LoadInst *MapCnt = IRB.CreateLoad(Int32Ty, MapCntPtr);
+        LoadInst *MapCnt = IRB.CreateLoad(Int64Ty, MapCntPtr);
         MapCnt->setMetadata(NoSanMetaId, NoneMetaNode);
-        Value *IncCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int32Ty, 1));
+        Value *IncCnt = IRB.CreateAdd(MapCnt, ConstantInt::get(Int64Ty, 1));
         IRB.CreateStore(IncCnt, MapCntPtr)
                 ->setMetadata(NoSanMetaId, NoneMetaNode);
       }
@@ -1044,7 +1050,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       OKF("Using Age. Counted %u BBs with the average of f(days)=%.6f ages.", 
               inst_ages, module_ave_ages);
     } else if (use_cmd_age_rank && !is_one_commit){
-      OKF("Using Rank. Counted %u BBs with the average of f(rank)=%.6f commits.", 
+      OKF("Using Rank. Counted %u BBs with the average age of f(rank)=%.6f commits.", 
                   inst_ages, module_ave_ages);
     }
     if (use_cmd_change && !is_one_commit){
@@ -1052,7 +1058,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     inst_changes, module_ave_chanegs);
     } 
 
-    OKF("BB Churn info. Instrumented %u BBs with average churn of %.6f",
+    OKF("BB Churn Raw Fitness. Instrumented %u BBs with average raw fitness of %.6f",
                     inst_fitness, module_ave_fitness);
       
 
