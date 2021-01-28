@@ -647,7 +647,7 @@ void create_byte_alias_table(struct queue_entry* q){
     sum += q->byte_score[i];
   }
 
-  if (sum == 0 || !q->was_fuzzed){
+  if (sum == 0){
     for (i=0; i< n; i++){
       q->alias_prob[i] = 1.0;
     }
