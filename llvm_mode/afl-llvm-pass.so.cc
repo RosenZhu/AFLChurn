@@ -120,6 +120,63 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
+double inst_norm_age(int max_days, int days_since_last_change){
+  double norm_days;
+  // if (days_since_last_change < 0) norm_days = 1;
+  // else norm_days = 
+  //     1 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
+
+  /* Normalize 1/days */
+  if (days_since_last_change <= 0 || max_days <= 1) {
+    norm_days = 1;
+    WARNF("Current days are less than 0 or maximum days are less then 1.");
+  }
+  else{
+    norm_days = (double)(max_days - days_since_last_change) / 
+                            (days_since_last_change * (max_days - 1));
+  }
+
+  return norm_days;
+
+}
+
+double inst_norm_rank(unsigned int max_rank, int line_rank){
+  double norm_ranks;
+  // rlogrank
+  // if (line_rank < 0) norm_ranks = 1;
+  // else norm_ranks = 1 / log2(line_rank + 2);
+
+  // log2rank
+  // if (max_rank >= 1){
+  //   if (line_rank < 0) norm_ranks = 1;
+  //   else norm_ranks = (log2(max_rank + 1) - log2(line_rank + 1)) / log2(max_rank + 1);
+  // }
+
+  /* rrank */
+  if (line_rank <= 0) {
+    norm_ranks = 1;
+    WARNF("Rank of lines is less than 0.");
+  }
+  else norm_ranks = 1 / (double)line_rank;
+
+  return norm_ranks;
+
+}
+
+double inst_norm_change(unsigned int num_changes){
+  double norm_chg;
+  // logchanges
+  if (num_changes < 0) norm_chg = 0;
+  else norm_chg = log2(num_changes + 1);
+    
+  // // xlogchange
+  //   if (num_changes < 0) norm_chg = 0;
+  //   else norm_chg = (num_changes + 1) * log2(num_changes + 1);
+
+  return norm_chg;
+
+}
+
 
 /* use popen() to execute git command */
 std::string execute_git_cmd (std::string directory, std::string str_cmd){
@@ -150,6 +207,70 @@ std::string execute_git_cmd (std::string directory, std::string str_cmd){
   }
 
   return str_res;
+
+}
+
+/* Get the number of changes that is used to choose between "always instrument"
+        or "insturment randomly".
+Note: #changes of a file is always larger than #changes of a line in the file,
+    so THRESHOLD_PERCENT_CHANGES is set in a low value. */
+int get_threshold_changes(std::string directory){
+
+  std::ostringstream changecmd;
+  unsigned int largest_changes = 0;
+  int change_threshold = 0;
+  FILE *dfp;
+
+  changecmd << "cd " << directory
+          << " && git log --name-only --pretty=\"format:\""
+          << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
+          << " | tr -s ' ' | sed \"s/^ //g\" | cut -d\" \" -f1 | tail -n1";
+  dfp = popen(changecmd.str().c_str(), "r");
+  if(NULL == dfp) return WRONG_VALUE;
+
+  if (fscanf(dfp, "%u", &largest_changes) != 1) return WRONG_VALUE;
+
+  change_threshold = THRESHOLD_PERCENT_CHANGES * largest_changes;
+
+  pclose(dfp);
+
+  return change_threshold;
+}
+
+/* if return value is 0, something wrong happens */
+unsigned long get_commit_time_days(std::string directory, std::string git_cmd){
+  unsigned long unix_time = 0;
+  FILE *dfp;
+  std::ostringstream datecmd;
+
+  datecmd << "cd " << directory
+          << " && "
+          << git_cmd;
+  dfp = popen(datecmd.str().c_str(), "r");
+
+  if (NULL == dfp) return WRONG_VALUE;
+  if (fscanf(dfp, "%lu", &unix_time) != 1) return WRONG_VALUE;
+  pclose(dfp);
+
+  return unix_time / 86400;
+
+}
+
+/* Get the number of commits before HEAD;
+  if return value is 0, something wrong happens */
+unsigned int get_max_ranks(std::string git_directory){
+
+  FILE *dfp;
+  unsigned int head_num_parents;
+  std::ostringstream headcmd;
+  headcmd << "cd " << git_directory
+          << " && git rev-list --count HEAD";
+  dfp = popen(headcmd.str().c_str(), "r");
+  if (NULL == dfp) return WRONG_VALUE;
+  if (fscanf(dfp, "%u", &head_num_parents) != 1) return WRONG_VALUE;
+  pclose(dfp);
+
+  return head_num_parents;
 
 }
 
@@ -375,17 +496,10 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   if (!lines2changes.empty()){
     // logchanges
     for (auto l2c : lines2changes){
-      if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-      else tmp_line2changes[l2c.first] = log2(l2c.second + 1);
+      tmp_line2changes[l2c.first] = inst_norm_change(l2c.second);
     }
-    file2line2change_map[relative_file_path] = tmp_line2changes;
 
-    // // xlogchange
-    // for (auto l2c : lines2changes){
-    //   if (l2c.second < 0) tmp_line2changes[l2c.first] = 0;
-    //   else tmp_line2changes[l2c.first] = (l2c.second + 1) * log2(l2c.second + 1); 
-    // }
-    // file2line2change_map[relative_file_path] = tmp_line2changes;
+    file2line2change_map[relative_file_path] = tmp_line2changes;
     
   }
   
@@ -401,7 +515,8 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   git_directory: /home/usrname/repo/
 */
 bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
-                    std::map<std::string, std::map<unsigned int, double>> &file2line2age_map){
+                    std::map<std::string, std::map<unsigned int, double>> &file2line2age_map,
+                    unsigned long head_commit_days, unsigned long init_commit_days){
 
   std::map<unsigned int, double> line_age_days;
 
@@ -419,28 +534,9 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   unsigned int line;
   int days_since_last_change;
 
-  
-  /* Get date (unix time) of HEAD commit */
-  unsigned long head_time;
-  FILE *dfp;
-  std::ostringstream datecmd;
-  datecmd << "cd " << git_directory
-          << " && git show -s --format=%ct HEAD";
-  dfp = popen(datecmd.str().c_str(), "r");
-  if (NULL == dfp) return false;
-  if (fscanf(dfp, "%lu", &head_time) != 1) return false;
-  pclose(dfp);
-  /* Get date of the oldest time */
-  std::ostringstream oldestcmd;
-  unsigned long init_commit_time;
-  oldestcmd << "cd " << git_directory
-            << " && git log --reverse --date=unix --oneline --format=%cd | head -n1";
-  dfp = popen(oldestcmd.str().c_str(), "r");
-  if (NULL == dfp) return false;
-  if (fscanf(dfp, "%lu", &init_commit_time) != 1) return false;
-  pclose(dfp);
+  if (head_commit_days==WRONG_VALUE || init_commit_days==WRONG_VALUE) return false;
 
-  int max_days = (head_time - init_commit_time) / 86400;
+  int max_days = head_commit_days - init_commit_days;
 
   cmd << "cd " << git_directory << " && git blame --date=unix " << relative_file_path
         << " | grep -o -P \"[0-9]{9}[0-9]? +[0-9]+\"";
@@ -449,21 +545,9 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   if(NULL == fp) return false;
   // get line by line
   while(fscanf(fp, "%lu %u", &unix_time, &line) == 2){
-    days_since_last_change = (head_time - unix_time) / 86400; //days
+    days_since_last_change = head_commit_days - unix_time / 86400; //days
 
-    // if (days_since_last_change < 0) line_age_days[line] = 1;
-    // else line_age_days[line] = 
-    //     1 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
-
-    /* Normalize 1/days */
-    if (days_since_last_change <= 0 || max_days <= 1) {
-      line_age_days[line] = 1;
-      WARNF("Current days are less than 0 or maximum days are less then 1.");
-    }
-    else{
-      line_age_days[line] = (double)(max_days - days_since_last_change) / 
-                              (days_since_last_change * (max_days - 1));
-    }
+    line_age_days[line] = inst_norm_age(max_days, days_since_last_change);
     
   }
 
@@ -484,23 +568,17 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
  */
 bool cal_line_age_rank(std::string relative_file_path, std::string git_directory,
                 std::map<std::string, std::map<unsigned int, double>> &file2line2rank_map,
-                std::map<std::string, double> &commit2rank){
+                std::map<std::string, double> &commit2rank,
+                unsigned int head_num_parents){
 
   char line_commit_sha[256];
   FILE *dfp, *curdfp;
   unsigned int nothing_line, line_num;
   std::map<unsigned int, double> line_rank;
-
-  /* Get the number of commits before HEAD */
-  unsigned int head_num_parents, cur_num_parents;
+  unsigned int cur_num_parents;
   int rank4line;
-  std::ostringstream headcmd;
-  headcmd << "cd " << git_directory
-          << " && git rev-list --count HEAD";
-  dfp = popen(headcmd.str().c_str(), "r");
-  if (NULL == dfp) return false;
-  if (fscanf(dfp, "%u", &head_num_parents) != 1) return false;
-  pclose(dfp);
+
+  if (head_num_parents == WRONG_VALUE) return false;
 
   /* output: commit_hash old_line_num current_line_num
         e.g., 9f1a353f68d6586b898c47c71a7631cdc816215f 167 346
@@ -528,21 +606,8 @@ bool cal_line_age_rank(std::string relative_file_path, std::string git_directory
       if(NULL == curdfp) continue;
       if (fscanf (curdfp, "%u", &cur_num_parents) == 1){
         rank4line = head_num_parents - cur_num_parents;
-        // rlogrank
-        // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 1;
-        // else commit2rank[str_cmt] = line_rank[line_num] = 1 / log2(rank4line + 2);
-
-        // log2rank ==> CAUTION: should minimize fitness in afl-fuzz.c
-        // if (rank4line < 0) commit2rank[str_cmt] = line_rank[line_num] = 0;
-        // else commit2rank[str_cmt] = line_rank[line_num] = log2(rank4line + 1);
-
-        /* rrank */
-        if (rank4line <= 0) {
-          commit2rank[str_cmt] = line_rank[line_num] = 1;
-          WARNF("Rank of lines is less than 0.");
-        }
-        else commit2rank[str_cmt] = line_rank[line_num] = 1 / (double)rank4line;
-
+        commit2rank[str_cmt] = line_rank[line_num] 
+                             = inst_norm_rank(head_num_parents, rank4line);
       }
       pclose(curdfp);
     }
@@ -723,7 +788,14 @@ bool AFLCoverage::runOnModule(Module &M) {
   int inst_blocks = 0, inst_ages = 0, inst_changes = 0, inst_fitness = 0;
   double module_total_ages = 0, module_total_changes = 0, module_total_fitness = 0,
       module_ave_ages = 0, module_ave_chanegs = 0, module_ave_fitness = 0;
- 
+
+  // Choose part of BBs to insert the age/change signal
+  int changes_inst_threshold = 0; // for change
+  unsigned long init_commit_days = 0, head_commit_days = 0; // for age
+  unsigned int head_num_parents = 0; // for ranks
+  unsigned int select_ratio = 60;
+  double norm_change_thd, norm_age_thd, norm_rank_thd;
+
 
   std::set<unsigned int> bb_lines;
   std::set<std::string> unexist_files, processed_files;
@@ -790,8 +862,26 @@ bool AFLCoverage::runOnModule(Module &M) {
                     OKF("Shallow repository clone. Ignoring file %s.", funcfile.c_str());
                     break;
                   }
-   
-                  if (!git_no_found) break;
+                  // #change threshold
+                  changes_inst_threshold = get_threshold_changes(git_path);
+                  //get commit time
+                  std::string head_cmd("git show -s --format=%ct HEAD");
+                  head_commit_days = get_commit_time_days(git_path, head_cmd);
+                  std::string init_cmd("git log --reverse --date=unix --oneline --format=%cd | head -n1");
+                  init_commit_days = get_commit_time_days(git_path, init_cmd);
+                  /* Get the number of commits before HEAD */
+                  head_num_parents = get_max_ranks(git_path);
+                  /* thresholds */
+                  norm_change_thd = inst_norm_change(changes_inst_threshold);
+                  norm_age_thd = inst_norm_age(head_commit_days - init_commit_days, THRESHOLD_DAYS);
+                  norm_rank_thd = inst_norm_rank(head_num_parents, THRESHOLD_RANKS);
+
+                  // std::cout << "changes threshold: "<< changes_inst_threshold
+                  //         << "; head days: " << head_commit_days
+                  //         << "; init days: " << init_commit_days
+                  //         << "; head's parents: "<< head_num_parents
+                  //         << std::endl;
+                  break;
                 }
                 
               }
@@ -819,8 +909,8 @@ bool AFLCoverage::runOnModule(Module &M) {
       double bb_age_total = 0, bb_age_avg = 0; unsigned int bb_age_count = 0;
       double bb_burst_total = 0, bb_burst_avg = 0; unsigned int bb_burst_count = 0;
       double bb_rank_total = 0, bb_rank_avg = 0; unsigned int bb_rank_count = 0;
-      double bb_raw_fitness;
-      bool bb_raw_fitness_flag = false;
+      double bb_raw_fitness, tmp_score;
+      bool bb_raw_fitness_flag = false, age_always_inst = false, churn_always_inst = false;
       
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -869,9 +959,11 @@ bool AFLCoverage::runOnModule(Module &M) {
                   
                   /* the ages for lines */
                   if (use_cmd_age) 
-                    calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores);
+                    calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores,
+                                                head_commit_days, init_commit_days);
                   if (use_cmd_age_rank)
-                    cal_line_age_rank(clean_relative_path, git_path, map_rank_age, commit_rank);
+                    cal_line_age_rank(clean_relative_path, git_path, map_rank_age, 
+                                            commit_rank, head_num_parents);
                   /* the number of changes for lines */
                   if (use_cmd_change)
                     calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores);
@@ -882,8 +974,10 @@ bool AFLCoverage::runOnModule(Module &M) {
                   // calculate line age
                   if (map_age_scores.count(clean_relative_path)){
                     if (map_age_scores[clean_relative_path].count(line)){
-                      bb_age_total += map_age_scores[clean_relative_path][line];
-                      bb_age_count++;
+                      // use the best value of a line as the value of a BB
+                      tmp_score = map_age_scores[clean_relative_path][line];
+                      if (bb_age_total < tmp_score) bb_age_total = tmp_score;
+                      bb_age_count = 1;
                     }
                   }
                 }
@@ -891,8 +985,9 @@ bool AFLCoverage::runOnModule(Module &M) {
                 if (use_cmd_age_rank){
                   if (map_rank_age.count(clean_relative_path)){
                     if (map_rank_age[clean_relative_path].count(line)){
-                      bb_rank_total += map_rank_age[clean_relative_path][line];
-                      bb_rank_count++;
+                      tmp_score = map_rank_age[clean_relative_path][line];
+                      if (bb_rank_total < tmp_score) bb_rank_total = tmp_score;
+                      bb_rank_count = 1;
                     }
                   }
                 }
@@ -901,8 +996,9 @@ bool AFLCoverage::runOnModule(Module &M) {
                   // calculate line change
                   if (map_bursts_scores.count(clean_relative_path)){
                     if (map_bursts_scores[clean_relative_path].count(line)){
-                      bb_burst_total += map_bursts_scores[clean_relative_path][line];
-                      bb_burst_count ++;
+                      tmp_score = map_bursts_scores[clean_relative_path][line];
+                      if (bb_burst_total < tmp_score) bb_burst_total = tmp_score;
+                      bb_burst_count = 1;
                     }
                   }
                 }
@@ -943,65 +1039,73 @@ bool AFLCoverage::runOnModule(Module &M) {
           IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
-      /* Age only; Add age of lines */
+      /* age/churn values */
+      if (bb_age_count > 0){
+        bb_age_avg = bb_age_total / bb_age_count;
+        if (bb_age_avg >= norm_age_thd) age_always_inst = true;
+      } else if (bb_rank_count > 0){
+        bb_rank_avg = bb_rank_total / bb_rank_count;
+        if (bb_rank_avg >= norm_rank_thd) age_always_inst = true;
+        bb_age_avg = bb_rank_avg;
+      }
+
+      if (bb_burst_count > 0){ //only when change is assigned
+        bb_burst_avg = bb_burst_total / bb_burst_count;
+        if (bb_burst_avg >= norm_change_thd) churn_always_inst = true;
+      }
+
+      /* insert age/churn into BBs */
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
+        /* Age only; Add age of lines */
         if (bb_age_count > 0 || bb_rank_count > 0){ //only when age is assigned
-          if (bb_age_count > 0)
-            bb_age_avg = bb_age_total / bb_age_count;
-          else if (bb_rank_count > 0){
-            bb_rank_avg = bb_rank_total / bb_rank_count;
-            bb_age_avg = bb_rank_avg;
-          }
           
-          inst_ages ++;
-          module_total_ages += bb_age_avg;
+          if (age_always_inst || AFL_R(100) < select_ratio){
+            inst_ages ++;
+            module_total_ages += bb_age_avg;
 
-          bb_raw_fitness = bb_age_avg;
-          bb_raw_fitness_flag = true;
+            bb_raw_fitness = bb_age_avg;
+            bb_raw_fitness_flag = true;
 
-          inst_fitness ++;
-          module_total_fitness += bb_raw_fitness;
+            inst_fitness ++;
+            module_total_fitness += bb_raw_fitness;
+          }
         }
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
         if (bb_burst_count > 0){ //only when change is assigned
-          bb_burst_avg = bb_burst_total / bb_burst_count;
-          inst_changes++;
-          module_total_changes += bb_burst_avg;
 
-          bb_raw_fitness = bb_burst_avg;
-          bb_raw_fitness_flag = true;
+          if (churn_always_inst || AFL_R(100) < select_ratio){
+            inst_changes++;
+            module_total_changes += bb_burst_avg;
 
-          inst_fitness ++;
-          module_total_fitness += bb_raw_fitness;
+            bb_raw_fitness = bb_burst_avg;
+            bb_raw_fitness_flag = true;
+
+            inst_fitness ++;
+            module_total_fitness += bb_raw_fitness;
+          }
         }
       } else if ((use_cmd_age || use_cmd_age_rank) && use_cmd_change){
         /* both age and change are enabled */
         // change
         if (bb_burst_count > 0){
-          bb_burst_avg = bb_burst_total / bb_burst_count;
           inst_changes++;
           module_total_changes += bb_burst_avg;
         } else bb_burst_avg = 1;
         // age
-        if (bb_age_count > 0)
-            bb_age_avg = bb_age_total / bb_age_count;
-        else if (bb_rank_count > 0){
-          bb_rank_avg = bb_rank_total / bb_rank_count;
-          bb_age_avg = bb_rank_avg;
-        } else bb_age_avg = 1;
-
         if (bb_age_count > 0 || bb_rank_count > 0){
           inst_ages ++;
           module_total_ages += bb_age_avg;
-        }
+        } else bb_age_avg = 1;
         // combine
         if (bb_burst_count > 0 || bb_age_count > 0 || bb_rank_count > 0){
-          bb_raw_fitness = bb_burst_avg * bb_age_avg;
-          bb_raw_fitness_flag = true;
+          if (age_always_inst || churn_always_inst || AFL_R(100) < select_ratio){
+            bb_raw_fitness = bb_burst_avg * bb_age_avg;
+            bb_raw_fitness_flag = true;
 
-          inst_fitness ++;
-          module_total_fitness += bb_raw_fitness;
+            inst_fitness ++;
+            module_total_fitness += bb_raw_fitness;
+          }
         }
         
       }

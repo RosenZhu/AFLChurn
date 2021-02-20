@@ -339,6 +339,15 @@
  */
 #define WEIGHT_SHM         16
 
+/* Threshold of ages and changes */
+// Always instrument a BB if its age is less than days
+#define THRESHOLD_DAYS     30
+#define THRESHOLD_RANKS    30
+// Always instrument a BB if its #changes is larger than a percentage
+#define THRESHOLD_PERCENT_CHANGES   0.1
+
+#define WRONG_VALUE     0
+
 /* Maximum allocator request size (keep well under INT_MAX): */
 
 #define MAX_ALLOC           0x40000000
