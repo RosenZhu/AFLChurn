@@ -576,7 +576,6 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
    */
   // u32 rem = q->len % 4;
   u32 i = (q->len >> 2);
-  
   u32* group_seed = ((u32*)seed_mem);
   u32* group_cur_input = ((u32*)cur_input_mem);
   u32* group_byte_score = (u32*)(q->byte_score);
@@ -587,8 +586,9 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
 
   while(i--){
     if ((*(group_seed++)) != (*(group_cur_input++))){
-      update_byte_score_havoc(q, cur_fitness, group_byte_score++);
+      update_byte_score_havoc(q, cur_fitness, group_byte_score);
     }
+    group_byte_score++;
   }
   // /* for the remainder bytes */
   // if (rem != 0){
