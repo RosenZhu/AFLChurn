@@ -279,6 +279,7 @@ struct queue_entry {
 
   u8* fname;                          /* File name for the test case      */
   u32 len;                            /* Input length                     */
+  u32 align_len;             /* for ACO; extend intput length to 4-bytes data */
 
   u8  cal_failed,                     /* Calibration failed?              */
       trim_done,                      /* Trimmed?                         */
@@ -479,70 +480,55 @@ void update_seed_fitness (void){
 }
 
 /* update byte score for group of 4 bytes at the same time */
-static inline void update_byte_score_deterministic(struct queue_entry* q, double cur_fitness, 
-                s32 start_pos, s32 end_pos){
+static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fitness,
+                          u32* one_group_byte_score){
   double delt = 0.0000001;  // float value is approximate
 
   if (cur_fitness > q->weight + delt){ // larger burst gets higher score
-    for (u32 i = start_pos; i <= end_pos; i++){
-      if (q->byte_score[i] < 255) // don't overflow
-          q->byte_score[i]++;
-    }
+    if (*one_group_byte_score != 0xffffffff) // don't overflow
+      *one_group_byte_score += 0x01010101; // each byte adds one
+    
   } else if(cur_fitness + delt < q->weight){
-    for (u32 i = start_pos; i <= end_pos; i++){
-      if (q->byte_score[i] > 0) // don't underflow
-          q->byte_score[i]--;
-    }
+    if (*one_group_byte_score != 0) // don't underflow
+        *one_group_byte_score -= 0x01010101; // each byte subtracts one
   }
 }
 
 /* update byte score for group of 4 bytes at the same time */
-static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fitness,
-                          u32* one_group_byte_score){
-  double delt = 0.0000001;  // float value is approximate
-  u8* byte_score = (u8*)one_group_byte_score;
-  if (cur_fitness > q->weight + delt){ // larger burst gets higher score
-    if (byte_score[0] < 255) byte_score[0]++; // don't overflow
-    if (byte_score[1] < 255) byte_score[1]++;
-    if (byte_score[2] < 255) byte_score[2]++;
-    if (byte_score[3] < 255) byte_score[3]++;
-    
-  } else if(cur_fitness + delt < q->weight){
-    if (byte_score[0] > 0) byte_score[0]--; // don't underflow
-    if (byte_score[1] > 0) byte_score[1]--;
-    if (byte_score[2] > 0) byte_score[2]--;
-    if (byte_score[3] > 0) byte_score[3]--;
-    
+static inline void update_byte_score_deterministic(struct queue_entry* q, double cur_fitness, 
+                s32 start_pos, s32 end_pos){
+  u32* group_byte_score = (u32*) q->byte_score;
+  s32 group_start_pos = start_pos / ACO_GROUP_SIZE;
+  s32 group_end_pos = end_pos / ACO_GROUP_SIZE;
+  u32 group_max_pos = q->align_len / ACO_GROUP_SIZE;
+
+  if (group_start_pos == group_end_pos){
+    if (group_start_pos < group_max_pos)
+        update_byte_score_havoc(q, cur_fitness, group_byte_score + group_start_pos);
+  } else {
+    if (group_start_pos < group_max_pos)
+        update_byte_score_havoc(q, cur_fitness, group_byte_score + group_start_pos);
+    if (group_end_pos < group_max_pos)
+        update_byte_score_havoc(q, cur_fitness, group_byte_score + group_end_pos);
   }
+
 }
 
 /* For deterministic stage. In deterministic stage, 
-      the scores will not gravitate to zero */
+      the scores will not gravitate to zero.
+  Calculate only when the lengths of an input and its seed equal.
+      [0 =< byte_end_pos - byte_start_pos < 4] */
 void cal_init_seed_byte_score(struct queue_entry* q,
                   s32 byte_start_pos, s32 byte_end_pos){
   double cur_raw_fitness, cur_fitness;
-  u32 end_pos, start_pos;
-  u8 num_neighbor_bytes = 2;
 
   if (!q->byte_score) return;
-
-  if (byte_start_pos >= q->len || byte_start_pos < 0) return;
-  
-  if (byte_end_pos >= q->len) end_pos = q->len - 1;
-  else end_pos = byte_end_pos;
-
-  /* consider neighbor bytes */
-  if ((end_pos + num_neighbor_bytes) >= q->len) end_pos = q->len - 1;
-  else end_pos = end_pos + num_neighbor_bytes;
-  
-  if ((byte_start_pos - num_neighbor_bytes) < 0) start_pos = 0;
-  else start_pos = byte_start_pos - num_neighbor_bytes;
 
   cur_raw_fitness = get_raw_fitness_of_executed_input();
 
   cur_fitness = normalize_fitness(cur_raw_fitness);
 
-  update_byte_score_deterministic(q, cur_fitness, start_pos, end_pos);
+  update_byte_score_deterministic(q, cur_fitness, byte_start_pos, byte_end_pos);
   total_aco_updates++;
 
 }
@@ -552,7 +538,7 @@ void expire_old_score(struct queue_entry* q){
   
   if (!(total_aco_updates % ACO_FREQENCY)){
     if (q->byte_score){
-      for (int i = 0; i < q->len; i++){
+      for (int i = 0; i < q->align_len; i++){
         /* gravitate to INIT_BYTE_SCORE */
         q->byte_score[i] = 
           (q->byte_score[i] - INIT_BYTE_SCORE) * ACO_COEF + INIT_BYTE_SCORE; // just drop the fractional part
@@ -574,8 +560,7 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
   /* if one byte in a group with the size group_size changes the fitness,
       other bytes in the group have the same change. 
    */
-  // u32 rem = q->len % 4;
-  u32 i = (q->len >> 2);
+  u32 i = q->align_len / ACO_GROUP_SIZE;
   u32* group_seed = ((u32*)seed_mem);
   u32* group_cur_input = ((u32*)cur_input_mem);
   u32* group_byte_score = (u32*)(q->byte_score);
@@ -590,12 +575,6 @@ void update_fitness_in_havoc(struct queue_entry* q, u8* seed_mem,
     }
     group_byte_score++;
   }
-  // /* for the remainder bytes */
-  // if (rem != 0){
-  //   if (memcmp(seed_mem + q->len - rem, cur_input_mem + q->len - rem, rem)){
-  //     update_byte_score_deterministic(q, cur_fitness, q->len - rem, q->len - 1);
-  //   }
-  // }
 
   total_aco_updates++;
 
@@ -1267,6 +1246,12 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->raw_fitness  = 0.0;
   q->alias_score = 0.0;
   q->weight = 0.0;
+
+  // for ACO byte score, extend to ACO_GROUP_SIZE * N
+  if (q->len % ACO_GROUP_SIZE)
+    q->align_len = q->len - q->len % ACO_GROUP_SIZE + ACO_GROUP_SIZE;
+  else
+    q->align_len = q->len;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -5665,15 +5650,23 @@ static u8 fuzz_one(char** argv) {
 
     queue_cur->trim_done = 1;
 
-    if (len != queue_cur->len) len = queue_cur->len;
+    if (len != queue_cur->len){
+      len = queue_cur->len;
+      // update align_len
+      if (queue_cur->len % ACO_GROUP_SIZE)
+          queue_cur->align_len 
+              = queue_cur->len - queue_cur->len % ACO_GROUP_SIZE + ACO_GROUP_SIZE;
+      else
+        queue_cur->align_len = queue_cur->len;
+    }
       
   }
 
   if (use_byte_fitness){
     if (!queue_cur->byte_score){
-      queue_cur->byte_score = ck_alloc(queue_cur->len);
+      queue_cur->byte_score = ck_alloc(queue_cur->align_len);
       // initialize the byte score as INIT_BYTE_SCORE
-      memset(queue_cur->byte_score, INIT_BYTE_SCORE, queue_cur->len);
+      memset(queue_cur->byte_score, INIT_BYTE_SCORE, queue_cur->align_len);
     }
 
     if (!queue_cur->alias_table){
@@ -6582,9 +6575,7 @@ skip_interest:
       memcpy(out_buf + i, extras[j].data, last_len);
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
-      if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + last_len - 1);
-
+      
       stage_cur++;
 
     }
@@ -6631,9 +6622,7 @@ skip_interest:
         ck_free(ex_tmp);
         goto abandon_entry;
       }
-      if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + extras[j].len - 1);
-
+      
       stage_cur++;
 
     }
@@ -6686,9 +6675,7 @@ skip_user_extras:
       memcpy(out_buf + i, a_extras[j].data, last_len);
 
       if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
-      if (use_byte_fitness)
-          cal_init_seed_byte_score(queue_cur, stage_cur_byte, stage_cur_byte + last_len - 1);
-
+      
       stage_cur++;
 
     }
@@ -8886,7 +8873,7 @@ stop_fuzzing:
   fclose(plot_file);
 
   //plot byte score
-  // plot_byte_score();
+  plot_byte_score();
 
 
   destroy_queue();

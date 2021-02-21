@@ -332,6 +332,8 @@
 #define ACO_FREQENCY       30
 #define ACO_COEF           0.9
 #define INIT_BYTE_SCORE    128
+/* ACO group size */
+#define ACO_GROUP_SIZE   4
 
 
 /* Shared memory for Path weight. 
@@ -343,10 +345,10 @@
 // Always instrument a BB if its age is less than days
 #define THRESHOLD_DAYS     30
 #define THRESHOLD_RANKS    30
-// Always instrument a BB if its #changes is larger than a percentage
-#define THRESHOLD_PERCENT_CHANGES   0.1
+// Always instrument a BB if its #changes is larger than a percentage (%)
+#define THRESHOLD_PERCENT_CHANGES   10
 
-/* Ratio to select a BB to insert age/churn */
+/* Ratio (%) to select a BB to insert age/churn */
 #define BB_SELECT_RATIO    30
 
 #define WRONG_VALUE     0

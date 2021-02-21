@@ -223,7 +223,7 @@ int get_threshold_changes(std::string directory){
   unsigned int largest_changes = 0;
   int change_threshold = 0;
   FILE *dfp;
-
+  // The maximum number of changes to any file.
   changecmd << "cd " << directory
           << " && git log --name-only --pretty=\"format:\""
           << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
@@ -233,7 +233,7 @@ int get_threshold_changes(std::string directory){
 
   if (fscanf(dfp, "%u", &largest_changes) != 1) return WRONG_VALUE;
 
-  change_threshold = THRESHOLD_PERCENT_CHANGES * largest_changes;
+  change_threshold = (THRESHOLD_PERCENT_CHANGES * largest_changes) / 100;
 
   pclose(dfp);
 
