@@ -345,8 +345,8 @@
 // Always instrument a BB if its age is less than days
 #define THRESHOLD_DAYS     30
 #define THRESHOLD_RANKS    30
-// Always instrument a BB if its #changes is larger than a percentage
-#define THRESHOLD_PERCENT_CHANGES   0.1
+// Always instrument a BB if its #changes is larger than a percentage (%)
+#define THRESHOLD_PERCENT_CHANGES   10
 
 /* Ratio (%) to select a BB to insert age/churn */
 #define BB_SELECT_RATIO    30

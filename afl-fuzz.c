@@ -5652,6 +5652,7 @@ static u8 fuzz_one(char** argv) {
 
     if (len != queue_cur->len){
       len = queue_cur->len;
+      // update align_len
       if (queue_cur->len % ACO_GROUP_SIZE)
           queue_cur->align_len 
               = queue_cur->len - queue_cur->len % ACO_GROUP_SIZE + ACO_GROUP_SIZE;
