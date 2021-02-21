@@ -223,7 +223,7 @@ int get_threshold_changes(std::string directory){
   unsigned int largest_changes = 0;
   int change_threshold = 0;
   FILE *dfp;
-
+  // the largest number of changes of files
   changecmd << "cd " << directory
           << " && git log --name-only --pretty=\"format:\""
           << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
