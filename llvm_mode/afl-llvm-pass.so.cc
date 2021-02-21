@@ -129,7 +129,7 @@ double inst_norm_age(int max_days, int days_since_last_change){
   /* Normalize 1/days */
   if (days_since_last_change <= 0 || max_days <= 1) {
     norm_days = 1;
-    WARNF("Current days are less than 0 or maximum days are less then 1.");
+    WARNF("Current days are less than 0 or maximum days are less than 1.");
   }
   else{
     norm_days = (double)(max_days - days_since_last_change) / 
@@ -168,6 +168,9 @@ double inst_norm_change(unsigned int num_changes){
   // logchanges
   if (num_changes < 0) norm_chg = 0;
   else norm_chg = log2(num_changes + 1);
+
+  // // change^2
+  // norm_chg = num_changes * num_changes;
     
   // // xlogchange
   //   if (num_changes < 0) norm_chg = 0;
@@ -793,9 +796,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   int changes_inst_threshold = 0; // for change
   unsigned long init_commit_days = 0, head_commit_days = 0; // for age
   unsigned int head_num_parents = 0; // for ranks
-  unsigned int select_ratio = 60;
-  double norm_change_thd, norm_age_thd, norm_rank_thd;
+  double norm_change_thd = 0, norm_age_thd = 0, norm_rank_thd = 0;
 
+  unsigned int bb_select_ratio = BB_SELECT_RATIO;
 
   std::set<unsigned int> bb_lines;
   std::set<std::string> unexist_files, processed_files;
@@ -906,11 +909,9 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      double bb_age_total = 0, bb_age_avg = 0; unsigned int bb_age_count = 0;
-      double bb_burst_total = 0, bb_burst_avg = 0; unsigned int bb_burst_count = 0;
-      double bb_rank_total = 0, bb_rank_avg = 0; unsigned int bb_rank_count = 0;
+      double bb_rank_age = 0, bb_age_best = 0, bb_burst_best = 0, bb_rank_best = 0;
       double bb_raw_fitness, tmp_score;
-      bool bb_raw_fitness_flag = false, age_always_inst = false, churn_always_inst = false;
+      bool bb_raw_fitness_flag = false;
       
       if (!bb_lines.empty())
             bb_lines.clear();
@@ -976,8 +977,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     if (map_age_scores[clean_relative_path].count(line)){
                       // use the best value of a line as the value of a BB
                       tmp_score = map_age_scores[clean_relative_path][line];
-                      if (bb_age_total < tmp_score) bb_age_total = tmp_score;
-                      bb_age_count = 1;
+                      if (bb_age_best < tmp_score) bb_rank_age = bb_age_best = tmp_score;
                     }
                   }
                 }
@@ -986,8 +986,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                   if (map_rank_age.count(clean_relative_path)){
                     if (map_rank_age[clean_relative_path].count(line)){
                       tmp_score = map_rank_age[clean_relative_path][line];
-                      if (bb_rank_total < tmp_score) bb_rank_total = tmp_score;
-                      bb_rank_count = 1;
+                      if (bb_rank_best < tmp_score) bb_rank_age = bb_rank_best = tmp_score;
                     }
                   }
                 }
@@ -997,8 +996,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                   if (map_bursts_scores.count(clean_relative_path)){
                     if (map_bursts_scores[clean_relative_path].count(line)){
                       tmp_score = map_bursts_scores[clean_relative_path][line];
-                      if (bb_burst_total < tmp_score) bb_burst_total = tmp_score;
-                      bb_burst_count = 1;
+                      if (bb_burst_best < tmp_score) bb_burst_best = tmp_score;
                     }
                   }
                 }
@@ -1039,73 +1037,58 @@ bool AFLCoverage::runOnModule(Module &M) {
           IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
       Store->setMetadata(NoSanMetaId, NoneMetaNode);
 
-      /* age/churn values */
-      if (bb_age_count > 0){
-        bb_age_avg = bb_age_total / bb_age_count;
-        if (bb_age_avg >= norm_age_thd) age_always_inst = true;
-      } else if (bb_rank_count > 0){
-        bb_rank_avg = bb_rank_total / bb_rank_count;
-        if (bb_rank_avg >= norm_rank_thd) age_always_inst = true;
-        bb_age_avg = bb_rank_avg;
-      }
-
-      if (bb_burst_count > 0){ //only when change is assigned
-        bb_burst_avg = bb_burst_total / bb_burst_count;
-        if (bb_burst_avg >= norm_change_thd) churn_always_inst = true;
-      }
-
       /* insert age/churn into BBs */
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
         /* Age only; Add age of lines */
-        if (bb_age_count > 0 || bb_rank_count > 0){ //only when age is assigned
+        if ((bb_rank_age > 0) && //only when age is assigned
+                  (bb_age_best > norm_age_thd || bb_rank_best > norm_rank_thd
+                      || AFL_R(100) < bb_select_ratio)){
+
+          inst_ages ++;
+          module_total_ages += bb_rank_age;
+
+          bb_raw_fitness = bb_rank_age;
+          bb_raw_fitness_flag = true;
+
+          inst_fitness ++;
+          module_total_fitness += bb_raw_fitness;
           
-          if (age_always_inst || AFL_R(100) < select_ratio){
-            inst_ages ++;
-            module_total_ages += bb_age_avg;
-
-            bb_raw_fitness = bb_age_avg;
-            bb_raw_fitness_flag = true;
-
-            inst_fitness ++;
-            module_total_fitness += bb_raw_fitness;
-          }
         }
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
-        if (bb_burst_count > 0){ //only when change is assigned
+        if ((bb_burst_best > 0) && //only when change is assigned
+                (bb_burst_best > norm_change_thd || AFL_R(100) < bb_select_ratio)){
+          inst_changes++;
+          module_total_changes += bb_burst_best;
 
-          if (churn_always_inst || AFL_R(100) < select_ratio){
-            inst_changes++;
-            module_total_changes += bb_burst_avg;
+          bb_raw_fitness = bb_burst_best;
+          bb_raw_fitness_flag = true;
 
-            bb_raw_fitness = bb_burst_avg;
-            bb_raw_fitness_flag = true;
-
-            inst_fitness ++;
-            module_total_fitness += bb_raw_fitness;
-          }
+          inst_fitness ++;
+          module_total_fitness += bb_raw_fitness;
         }
       } else if ((use_cmd_age || use_cmd_age_rank) && use_cmd_change){
         /* both age and change are enabled */
-        // change
-        if (bb_burst_count > 0){
-          inst_changes++;
-          module_total_changes += bb_burst_avg;
-        } else bb_burst_avg = 1;
-        // age
-        if (bb_age_count > 0 || bb_rank_count > 0){
-          inst_ages ++;
-          module_total_ages += bb_age_avg;
-        } else bb_age_avg = 1;
-        // combine
-        if (bb_burst_count > 0 || bb_age_count > 0 || bb_rank_count > 0){
-          if (age_always_inst || churn_always_inst || AFL_R(100) < select_ratio){
-            bb_raw_fitness = bb_burst_avg * bb_age_avg;
+        if ((bb_rank_age > 0 || bb_burst_best > 0) &&
+                (bb_burst_best > norm_change_thd || bb_age_best > norm_age_thd
+                   || bb_rank_best > norm_rank_thd || AFL_R(100) < bb_select_ratio)){
+            // change
+            if (bb_burst_best > 0){
+              inst_changes++;
+              module_total_changes += bb_burst_best;
+            } else bb_burst_best = 1;
+            // age
+            if (bb_rank_age > 0){
+              inst_ages ++;
+              module_total_ages += bb_rank_age;
+            } else bb_rank_age = 1;
+            // combine
+            bb_raw_fitness = bb_burst_best * bb_rank_age;
             bb_raw_fitness_flag = true;
 
             inst_fitness ++;
             module_total_fitness += bb_raw_fitness;
-          }
+          
         }
         
       }

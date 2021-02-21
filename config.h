@@ -346,6 +346,9 @@
 // Always instrument a BB if its #changes is larger than a percentage
 #define THRESHOLD_PERCENT_CHANGES   0.1
 
+/* Ratio to select a BB to insert age/churn */
+#define BB_SELECT_RATIO    30
+
 #define WRONG_VALUE     0
 
 /* Maximum allocator request size (keep well under INT_MAX): */
