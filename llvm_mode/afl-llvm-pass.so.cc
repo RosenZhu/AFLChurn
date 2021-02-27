@@ -163,11 +163,30 @@ double inst_norm_rank(unsigned int max_rank, int line_rank){
 
 }
 
-double inst_norm_change(unsigned int num_changes){
-  double norm_chg;
-  // logchanges
-  if (num_changes < 0) norm_chg = 0;
-  else norm_chg = log2(num_changes + 1);
+double inst_norm_change(unsigned int num_changes, unsigned short change_select){
+  double norm_chg = 0;
+
+  switch(change_select){
+    case CHURN_LOG_CHANGE:
+      // logchanges
+      if (num_changes < 0) norm_chg = 0;
+      else norm_chg = log2(num_changes + 1);
+      break;
+
+    case CHURN_CHANGE:
+      norm_chg = num_changes;
+      break;
+
+    case CHURN_CHANGE2:
+      // change^2
+      norm_chg = num_changes * num_changes;
+      break;
+    default:
+      FATAL("Wrong CHURN_CHANGE type!");
+  }
+  // // logchanges
+  // if (num_changes < 0) norm_chg = 0;
+  // else norm_chg = log2(num_changes + 1);
 
   // // change^2
   // norm_chg = num_changes * num_changes;
@@ -436,7 +455,8 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
 
 /* use git command to get line changes */
 void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
-                    std::map<std::string, std::map<unsigned int, double>> &file2line2change_map){
+                    std::map<std::string, std::map<unsigned int, double>> &file2line2change_map,
+                    unsigned short change_sig){
     
   std::ostringstream cmd;
   std::string str_cur_commit_sha;
@@ -499,7 +519,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   if (!lines2changes.empty()){
     // logchanges
     for (auto l2c : lines2changes){
-      tmp_line2changes[l2c.first] = inst_norm_change(l2c.second);
+      tmp_line2changes[l2c.first] = inst_norm_change(l2c.second, change_sig);
     }
 
     file2line2change_map[relative_file_path] = tmp_line2changes;
@@ -760,12 +780,15 @@ bool AFLCoverage::runOnModule(Module &M) {
   // default: instrument changes and days
   bool use_cmd_change = true, use_cmd_age_rank = false, use_cmd_age = true;
 
-  char *day_sig;
+  char *day_sig_str, *change_sig_str;
+
+  unsigned short change_sig = CHURN_LOG_CHANGE; //day_sig, 
 
   if (getenv("DISABLE_BURST_AGE")) use_cmd_age = false;
-  day_sig = getenv("ENABLE_RANK_AGE");
-  if (day_sig){
-    if (!strcmp(day_sig, "rrank")){
+  day_sig_str = getenv("ENABLE_RANK_AGE");
+  if (day_sig_str){
+    if (!use_cmd_age) FATAL("Don't set DISABLE_BURST_AGE!");
+    if (!strcmp(day_sig_str, "rrank")){
       use_cmd_age_rank = true;
       use_cmd_age = false;
     } else{
@@ -774,6 +797,30 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   if (getenv("DISABLE_BURST_CHURN")) use_cmd_change = false;
+  change_sig_str = getenv("BURST_CHURN_SIG");
+  if (change_sig_str){
+    if (!use_cmd_change) FATAL("Don't set DISABLE_BURST_CHURN!");
+    if (!strcmp(change_sig_str, "logchange")){
+      change_sig = CHURN_LOG_CHANGE;
+    } else if (!strcmp(change_sig_str, "change")){
+      change_sig = CHURN_CHANGE;
+    } else if (!strcmp(change_sig_str, "change2")){
+      change_sig = CHURN_CHANGE2;
+    } else {
+      FATAL("Wrong change signal.");
+    }
+  }
+
+  unsigned int bb_select_ratio = BB_SELECT_RATIO;
+  char *bb_select_ratio_str = getenv("BURST_INST_RATIO");
+
+  if (bb_select_ratio_str) {
+
+    if (sscanf(bb_select_ratio_str, "%u", &bb_select_ratio) != 1 || !bb_select_ratio ||
+        bb_select_ratio > 100)
+      FATAL("Bad value of AFL_INST_RATIO (must be between 1 and 100)");
+
+  }
 
   /* Get globals for the SHM region and the previous location. Note that
      __afl_prev_loc is thread-local. */
@@ -797,8 +844,6 @@ bool AFLCoverage::runOnModule(Module &M) {
   unsigned long init_commit_days = 0, head_commit_days = 0; // for age
   unsigned int head_num_parents = 0; // for ranks
   double norm_change_thd = 0, norm_age_thd = 0, norm_rank_thd = 0;
-
-  unsigned int bb_select_ratio = BB_SELECT_RATIO;
 
   std::set<unsigned int> bb_lines;
   std::set<std::string> unexist_files, processed_files;
@@ -875,7 +920,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                   /* Get the number of commits before HEAD */
                   head_num_parents = get_max_ranks(git_path);
                   /* thresholds */
-                  norm_change_thd = inst_norm_change(changes_inst_threshold);
+                  norm_change_thd = inst_norm_change(changes_inst_threshold, change_sig);
                   norm_age_thd = inst_norm_age(head_commit_days - init_commit_days, THRESHOLD_DAYS);
                   norm_rank_thd = inst_norm_rank(head_num_parents, THRESHOLD_RANKS);
 
@@ -967,7 +1012,8 @@ bool AFLCoverage::runOnModule(Module &M) {
                                             commit_rank, head_num_parents);
                   /* the number of changes for lines */
                   if (use_cmd_change)
-                    calculate_line_change_git_cmd(clean_relative_path, git_path, map_bursts_scores);
+                    calculate_line_change_git_cmd(clean_relative_path, git_path, 
+                                                      map_bursts_scores, change_sig);
                   
                 }
                 
@@ -1139,7 +1185,7 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    
+    OKF("Insert ratio %u%%", bb_select_ratio);
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
     if (inst_fitness) module_ave_fitness = module_total_fitness / inst_fitness;

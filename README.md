@@ -22,6 +22,14 @@ We can choose one of the schemes or both of them.
 
 - `export DISABLE_BURST_CHURN=1`: disable the number of changes of lines during build processd.
 
+    `export BURST_CHURN_SIG=change`: change; 
+
+    `export BURST_CHURN_SIG=change2`: change^2;
+
+    `export BURST_CHURN_SIG=logchange`: log2(change);
+
+- `export BURST_INST_RATIO=N`: N%, select N% BBs to be inserted churn/age
+
 
 Install
 

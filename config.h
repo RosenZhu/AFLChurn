@@ -335,6 +335,12 @@
 /* ACO group size */
 #define ACO_GROUP_SIZE   4
 
+enum{
+   CHURN_LOG_CHANGE,
+   CHURN_CHANGE,
+   CHURN_CHANGE2
+};
+
 
 /* Shared memory for Path weight. 
 8 bytes for weight (double); 8 for count (integer).
