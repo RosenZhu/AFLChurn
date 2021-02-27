@@ -179,7 +179,7 @@ double inst_norm_change(unsigned int num_changes, unsigned short change_select){
 
     case CHURN_CHANGE2:
       // change^2
-      norm_chg = num_changes * num_changes;
+      norm_chg = (double)num_changes * num_changes;
       break;
     default:
       FATAL("Wrong CHURN_CHANGE type!");
@@ -787,7 +787,6 @@ bool AFLCoverage::runOnModule(Module &M) {
   if (getenv("DISABLE_BURST_AGE")) use_cmd_age = false;
   day_sig_str = getenv("ENABLE_RANK_AGE");
   if (day_sig_str){
-    if (!use_cmd_age) FATAL("Don't set DISABLE_BURST_AGE!");
     if (!strcmp(day_sig_str, "rrank")){
       use_cmd_age_rank = true;
       use_cmd_age = false;
@@ -799,7 +798,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   if (getenv("DISABLE_BURST_CHURN")) use_cmd_change = false;
   change_sig_str = getenv("BURST_CHURN_SIG");
   if (change_sig_str){
-    if (!use_cmd_change) FATAL("Don't set DISABLE_BURST_CHURN!");
+    if (!use_cmd_change) FATAL("Cannot simultaneously set DISABLE_BURST_CHURN and BURST_CHURN_SIG!");
     if (!strcmp(change_sig_str, "logchange")){
       change_sig = CHURN_LOG_CHANGE;
     } else if (!strcmp(change_sig_str, "change")){
@@ -818,7 +817,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
     if (sscanf(bb_select_ratio_str, "%u", &bb_select_ratio) != 1 || !bb_select_ratio ||
         bb_select_ratio > 100)
-      FATAL("Bad value of AFL_INST_RATIO (must be between 1 and 100)");
+      FATAL("Bad value of BURST_INST_RATIO (must be between 1 and 100)");
 
   }
 
@@ -1185,7 +1184,7 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    OKF("Insert ratio %u%%", bb_select_ratio);
+    OKF("AFLChurn instrumentation ratio %u%%", bb_select_ratio);
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
     if (inst_fitness) module_ave_fitness = module_total_fitness / inst_fitness;
