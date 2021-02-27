@@ -8872,8 +8872,8 @@ stop_fuzzing:
 
   fclose(plot_file);
 
-  //plot byte score
-  plot_byte_score();
+  // //plot byte score
+  // plot_byte_score();
 
 
   destroy_queue();
