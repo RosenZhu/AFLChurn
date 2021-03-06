@@ -97,6 +97,8 @@ enum{
   /* 01 */ ANNEAL    /* default */
 };
 
+float aco_coeff = ACO_COEF;
+
 u32 aco_max_seed_len;
 
 double max_raw_fitness = 0,    /* max path churn among all seeds */
@@ -540,8 +542,10 @@ void expire_old_score(struct queue_entry* q){
     if (q->byte_score){
       for (int i = 0; i < q->align_len; i++){
         /* gravitate to INIT_BYTE_SCORE */
+        // just drop the fractional part
         q->byte_score[i] = 
-          (q->byte_score[i] - INIT_BYTE_SCORE) * ACO_COEF + INIT_BYTE_SCORE; // just drop the fractional part
+          (q->byte_score[i] - INIT_BYTE_SCORE) * aco_coeff + INIT_BYTE_SCORE;
+          // (q->byte_score[i] - INIT_BYTE_SCORE) * ACO_COEF + INIT_BYTE_SCORE;
       }
     }
   }
@@ -8442,7 +8446,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qp:eZs:H:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qp:eZs:H:A:")) > 0)
 
     switch (opt) {
 
@@ -8628,11 +8632,16 @@ int main(int argc, char** argv) {
 
       case 's':
         if (sscanf(optarg, "%u", &scale_exponent) < 1) 
-              FATAL("Bad syntax used for -c");
+              FATAL("Bad syntax used for -s");
         break;
 
       case 'H':
         if (sscanf(optarg, "%f", &fitness_exponent) < 1) 
+              FATAL("Bad syntax used for -H");
+        break;
+      
+      case 'A':
+        if (sscanf(optarg, "%f", &aco_coeff) < 1) 
               FATAL("Bad syntax used for -H");
         break;
 
@@ -8684,6 +8693,7 @@ int main(int argc, char** argv) {
   if (alias_seed_selection) OKF("Select next seeds based on churn info.");
   OKF("scale_exponent is %u", scale_exponent);
   OKF("fitness_exponent is %f", fitness_exponent);
+  OKF("ACO attenuation coefficient is %f", aco_coeff);
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);

@@ -67,13 +67,6 @@
 
 
 
-/* churn signal */
-enum{
-  /* 00 */ SIG_XLOG_CHANGES,
-  /* 01 */ SIG_LOG_CHANGES
-};
-
-
 using namespace llvm;
 
 
