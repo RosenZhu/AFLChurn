@@ -67,13 +67,6 @@
 
 
 
-/* churn signal */
-enum{
-  /* 00 */ SIG_XLOG_CHANGES,
-  /* 01 */ SIG_LOG_CHANGES
-};
-
-
 using namespace llvm;
 
 
@@ -810,7 +803,7 @@ bool AFLCoverage::runOnModule(Module &M) {
     }
   }
 
-  unsigned int bb_select_ratio = BB_SELECT_RATIO;
+  unsigned int bb_select_ratio = CHURN_INSERT_RATIO;
   char *bb_select_ratio_str = getenv("BURST_INST_RATIO");
 
   if (bb_select_ratio_str) {

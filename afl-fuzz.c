@@ -107,6 +107,7 @@ size_t calibrated_paths = 0;  /* aggregate count */
 double show_factor = 0.0;
 
 u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
+u8 ACO_GRAV_BIAS = (1 - ACO_COEF) * INIT_BYTE_SCORE;
 
 u32 scale_exponent = 3; // default
 float fitness_exponent = 0.3;
@@ -487,11 +488,11 @@ static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fit
   if (cur_fitness > q->weight + delt){ // larger burst gets higher score
     if (*one_group_byte_score != 0xffffffff) // don't overflow
       *one_group_byte_score += 0x01010101; // each byte adds one
-    
-  } else if(cur_fitness + delt < q->weight){
-    if (*one_group_byte_score != 0) // don't underflow
-        *one_group_byte_score -= 0x01010101; // each byte subtracts one
-  }
+  } 
+  // else if(cur_fitness + delt < q->weight){
+  //   if (*one_group_byte_score != 0) // don't underflow
+  //       *one_group_byte_score -= 0x01010101; // each byte subtracts one
+  // }
 }
 
 /* update byte score for group of 4 bytes at the same time */
@@ -540,8 +541,8 @@ void expire_old_score(struct queue_entry* q){
     if (q->byte_score){
       for (int i = 0; i < q->align_len; i++){
         /* gravitate to INIT_BYTE_SCORE */
-        q->byte_score[i] = 
-          (q->byte_score[i] - INIT_BYTE_SCORE) * ACO_COEF + INIT_BYTE_SCORE; // just drop the fractional part
+        // just drop the fractional part
+        q->byte_score[i] = q->byte_score[i] * ACO_COEF + ACO_GRAV_BIAS;
       }
     }
   }
@@ -8628,7 +8629,7 @@ int main(int argc, char** argv) {
 
       case 's':
         if (sscanf(optarg, "%u", &scale_exponent) < 1) 
-              FATAL("Bad syntax used for -c");
+              FATAL("Bad syntax used for -s");
         break;
 
       case 'H':
@@ -8872,8 +8873,8 @@ stop_fuzzing:
 
   fclose(plot_file);
 
-  // //plot byte score
-  // plot_byte_score();
+  //plot byte score
+  plot_byte_score();
 
 
   destroy_queue();
