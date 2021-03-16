@@ -488,11 +488,11 @@ static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fit
   if (cur_fitness > q->weight + delt){ // larger burst gets higher score
     if (*one_group_byte_score != 0xffffffff) // don't overflow
       *one_group_byte_score += 0x01010101; // each byte adds one
-    
-  } else if(cur_fitness + delt < q->weight){
-    if (*one_group_byte_score != 0) // don't underflow
-        *one_group_byte_score -= 0x01010101; // each byte subtracts one
-  }
+  } 
+  // else if(cur_fitness + delt < q->weight){
+  //   if (*one_group_byte_score != 0) // don't underflow
+  //       *one_group_byte_score -= 0x01010101; // each byte subtracts one
+  // }
 }
 
 /* update byte score for group of 4 bytes at the same time */
