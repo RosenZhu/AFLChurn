@@ -537,12 +537,21 @@ void cal_init_seed_byte_score(struct queue_entry* q,
 /* expire old scores */
 void expire_old_score(struct queue_entry* q){
   
-  if (!(total_aco_updates % ACO_FREQENCY)){
+  // if (!(total_aco_updates % ACO_FREQENCY)){
+  if (!UR(q->len)){
     if (q->byte_score){
       for (int i = 0; i < q->align_len; i++){
         /* gravitate to INIT_BYTE_SCORE */
         // just drop the fractional part
-        q->byte_score[i] = q->byte_score[i] * ACO_COEF + ACO_GRAV_BIAS;
+        if (q->byte_score[i] > MIN_BYTE_SCORE && q->byte_score[i] < INIT_BYTE_SCORE){
+          q->byte_score[i]++;
+        } else if (q->byte_score[i] > INIT_BYTE_SCORE && q->byte_score[i] < MAX_BYTE_SCORE){
+          q->byte_score[i]--;
+        } else {
+          // values in [MIN_BYTE_SCORE, MAX_BYTE_SCORE] will not change using this calculation
+          q->byte_score[i] = q->byte_score[i] * ACO_COEF + ACO_GRAV_BIAS;
+        }
+        
       }
     }
   }
@@ -593,7 +602,7 @@ static inline u32 select_one_byte(struct queue_entry *q, u32 cur_input_len){
   // // cur_input_len is too short (than the alias position)
   // if (q->alias_table[s] >= cur_input_len) return s;
   // generate the next percent
-  double p = (double)UR(100)/100;
+  double p = (double)UR(0xFFFFFFFF)/0xFFFFFFFE;
   return (p < q->alias_prob[s] ? s : q->alias_table[s]);
 }
 
@@ -1035,7 +1044,7 @@ static inline u32 select_next_queue_entry(void){
   // randomly select an aliased seed
   u32 s = UR(queued_paths);
   // generate the next percent
-  double p = (double)UR(100)/100;
+  double p = (double)UR(0xFFFFFFFF)/0xFFFFFFFE;
   return (p < seed_alias_probability[s] ? s : seed_alias_table[s]);
 }
 
@@ -7146,7 +7155,7 @@ havoc_stage:
       update_fitness_in_havoc(queue_cur, orig_in,
                 out_buf, temp_len);
         
-      expire_old_score(queue_cur); // expire old score for every 30 runs
+      expire_old_score(queue_cur); // expire old scores
     }
         
 
