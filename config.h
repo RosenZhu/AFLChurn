@@ -332,10 +332,15 @@
 
 #define ACO_FREQENCY       30
 #define ACO_COEF           0.9
-#define INIT_BYTE_SCORE    128
-//values in [MIN_BYTE_SCORE, MAX_BYTE_SCORE] will not change by calculation
-#define MIN_BYTE_SCORE     118
-#define MAX_BYTE_SCORE     138
+// #define INIT_BYTE_SCORE    128
+// //values in [MIN_BYTE_SCORE, MAX_BYTE_SCORE] will not change by calculation
+// #define MIN_BYTE_SCORE     118
+// #define MAX_BYTE_SCORE     138
+
+// #define INIT_BYTE_SCORE    0
+// //values in [MIN_BYTE_SCORE, MAX_BYTE_SCORE] will not change by calculation
+// #define MIN_BYTE_SCORE     0
+// #define MAX_BYTE_SCORE     0
 /* ACO group size */
 #define ACO_GROUP_SIZE   4
 
@@ -343,6 +348,11 @@ enum{
    CHURN_LOG_CHANGE,
    CHURN_CHANGE,
    CHURN_CHANGE2
+};
+
+enum{
+   ACO_INC_ONLY,
+   ACO_INC_DEC
 };
 
 

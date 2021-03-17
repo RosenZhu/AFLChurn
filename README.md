@@ -92,7 +92,8 @@ set `fitness_exponent` in
 fitness * (1 - pow(fitness_exponent, q->times_selected)) 
         + 0.5 * pow(fitness_exponent, q->times_selected);
 ```
-
+### ACO increase/decrease score
+if `A` is set, set it to "increase and decrease" mode.
 
 ### DEFAULT
 pe3, N/days, mul, 100logchange, Texp0.3

@@ -107,7 +107,10 @@ size_t calibrated_paths = 0;  /* aggregate count */
 double show_factor = 0.0;
 
 u8 use_byte_fitness = 1;  /* use byte score to select bytes; default: use */
-u8 ACO_GRAV_BIAS = (1 - ACO_COEF) * INIT_BYTE_SCORE;
+u8 aco_incdec = ACO_INC_ONLY;     /* only increase score or increase/decrease */
+u8 INIT_BYTE_SCORE = 0, MIN_BYTE_SCORE = 0, MAX_BYTE_SCORE = 0;
+u8 ACO_GRAV_BIAS = 0;  
+// ACO_GRAV_BIAS = (1 - ACO_COEF) * INIT_BYTE_SCORE;
 
 u32 scale_exponent = 3; // default
 float fitness_exponent = 0.3;
@@ -485,14 +488,21 @@ static inline void update_byte_score_havoc(struct queue_entry* q, double cur_fit
                           u32* one_group_byte_score){
   double delt = 0.0000001;  // float value is approximate
 
-  if (cur_fitness > q->weight + delt){ // larger burst gets higher score
-    if (*one_group_byte_score != 0xffffffff) // don't overflow
-      *one_group_byte_score += 0x01010101; // each byte adds one
-  } 
-  // else if(cur_fitness + delt < q->weight){
-  //   if (*one_group_byte_score != 0) // don't underflow
-  //       *one_group_byte_score -= 0x01010101; // each byte subtracts one
-  // }
+  if (aco_incdec == ACO_INC_DEC){
+    if (cur_fitness > q->weight + delt){ // larger burst gets higher score
+      if (*one_group_byte_score != 0xffffffff) // don't overflow
+        *one_group_byte_score += 0x01010101; // each byte adds one
+    } else if(cur_fitness + delt < q->weight){
+      if (*one_group_byte_score != 0) // don't underflow
+          *one_group_byte_score -= 0x01010101; // each byte subtracts one
+    }
+  } else {
+    if (cur_fitness > q->weight + delt){ // larger burst gets higher score
+      if (*one_group_byte_score != 0xffffffff) // don't overflow
+        *one_group_byte_score += 0x01010101; // each byte adds one
+    }
+  }
+
 }
 
 /* update byte score for group of 4 bytes at the same time */
@@ -8452,7 +8462,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qp:eZs:H:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qp:eZs:H:A")) > 0)
 
     switch (opt) {
 
@@ -8645,6 +8655,14 @@ int main(int argc, char** argv) {
         if (sscanf(optarg, "%f", &fitness_exponent) < 1) 
               FATAL("Bad syntax used for -H");
         break;
+      
+      case 'A':
+        aco_incdec = ACO_INC_DEC;
+        INIT_BYTE_SCORE = 128;
+        MIN_BYTE_SCORE = 118; 
+        MAX_BYTE_SCORE = 138;
+        ACO_GRAV_BIAS = (1 - ACO_COEF) * INIT_BYTE_SCORE;
+        break;
 
       default:
 
@@ -8694,6 +8712,11 @@ int main(int argc, char** argv) {
   if (alias_seed_selection) OKF("Select next seeds based on churn info.");
   OKF("scale_exponent is %u", scale_exponent);
   OKF("fitness_exponent is %f", fitness_exponent);
+  if (aco_incdec == ACO_INC_DEC){
+    OKF("ACO score - increase and decrease.");
+  } else{
+    OKF("ACO score - increase only");
+  }
 
   if (getenv("AFL_PRELOAD")) {
     setenv("LD_PRELOAD", getenv("AFL_PRELOAD"), 1);
