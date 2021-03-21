@@ -64,13 +64,6 @@ power schedule. Default: anneal.
     -p anneal
     -p average
 
-### option -b
-Choose "age" or "churn". Default: both
-
-    -b none
-    -b age
-    -b churn
-
 ### option -e
 Byte score for mutation. 
 If `-e` is set, it will not use the ant colony optimisation for mutation.
