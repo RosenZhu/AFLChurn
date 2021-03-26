@@ -369,7 +369,7 @@ enum{
 #define THRESHOLD_PERCENT_CHANGES   10
 
 /* Ratio (%) to select a BB to insert age/churn */
-#define CHURN_INSERT_RATIO    100
+#define CHURN_INSERT_RATIO    30
 
 #define WRONG_VALUE     0
 

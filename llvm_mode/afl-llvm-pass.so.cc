@@ -464,7 +464,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   // result: commit short SHAs
   // TODO: If the file name changed, it cannot get the changed lines.
   //  --since=10.years 
-  char* ch_month = getenv("BURST_SINCE_MONTHS");
+  char* ch_month = getenv("AFLCHURN_SINCE_MONTHS");
   if (ch_month){
     std::string since_month(ch_month);
     if (since_month.find_first_not_of("0123456789") == std::string::npos){ // all digits
@@ -777,8 +777,8 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   unsigned short change_sig = CHURN_LOG_CHANGE; //day_sig, 
 
-  if (getenv("DISABLE_BURST_AGE")) use_cmd_age = false;
-  day_sig_str = getenv("ENABLE_RANK_AGE");
+  if (getenv("AFLCHURN_DISABLE_AGE")) use_cmd_age = false;
+  day_sig_str = getenv("AFLCHURN_ENABLE_RANK");
   if (day_sig_str){
     if (!strcmp(day_sig_str, "rrank")){
       use_cmd_age_rank = true;
@@ -788,10 +788,10 @@ bool AFLCoverage::runOnModule(Module &M) {
     }
   }
 
-  if (getenv("DISABLE_BURST_CHURN")) use_cmd_change = false;
-  change_sig_str = getenv("BURST_CHURN_SIG");
+  if (getenv("AFLCHURN_DISABLE_CHURN")) use_cmd_change = false;
+  change_sig_str = getenv("AFLCHURN_CHURN_SIG");
   if (change_sig_str){
-    if (!use_cmd_change) FATAL("Cannot simultaneously set DISABLE_BURST_CHURN and BURST_CHURN_SIG!");
+    if (!use_cmd_change) FATAL("Cannot simultaneously set AFLCHURN_DISABLE_CHURN and AFLCHURN_CHURN_SIG!");
     if (!strcmp(change_sig_str, "logchange")){
       change_sig = CHURN_LOG_CHANGE;
     } else if (!strcmp(change_sig_str, "change")){
@@ -804,13 +804,13 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   unsigned int bb_select_ratio = CHURN_INSERT_RATIO;
-  char *bb_select_ratio_str = getenv("BURST_INST_RATIO");
+  char *bb_select_ratio_str = getenv("AFLCHURN_INST_RATIO");
 
   if (bb_select_ratio_str) {
 
     if (sscanf(bb_select_ratio_str, "%u", &bb_select_ratio) != 1 || !bb_select_ratio ||
         bb_select_ratio > 100)
-      FATAL("Bad value of BURST_INST_RATIO (must be between 1 and 100)");
+      FATAL("Bad value of AFLCHURN_INST_RATIO (must be between 1 and 100)");
 
   }
 
