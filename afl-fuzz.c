@@ -150,6 +150,8 @@ static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
 EXP_ST u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
 
+EXP_ST u32 cpu_to_bind = 0;           /* id of free CPU core to bind      */
+
 static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
 
 EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
@@ -160,6 +162,7 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            kill_signal,               /* Signal that killed the child     */
            resuming_fuzz,             /* Resuming an older fuzzing job?   */
            timeout_given,             /* Specific timeout given?          */
+           cpu_to_bind_given,         /* Specified cpu_to_bind given?     */
            not_on_tty,                /* stdout is not a tty              */
            term_too_small,            /* terminal dimensions too small    */
            uses_asan,                 /* Target uses ASAN?                */
@@ -808,7 +811,21 @@ static void bind_to_free_cpu(void) {
 
   closedir(d);
 
-  for (i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+  if (cpu_to_bind_given) {
+
+    if (cpu_to_bind >= cpu_core_count)
+      FATAL("The CPU core id to bind should be between 0 and %u", cpu_core_count - 1);
+
+    if (cpu_used[cpu_to_bind])
+      FATAL("The CPU core #%u to bind is not free!", cpu_to_bind);
+
+    i = cpu_to_bind;
+
+  } else {
+
+    for (i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+
+  }
 
   if (i == cpu_core_count) {
 
@@ -1279,7 +1296,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
   cycles_wo_finds = 0;
 
-  if (!(queued_paths % 100)) {
+  /* Set next_100 pointer for every 100th element (index 0, 100, etc) to allow faster iteration. */
+  if ((queued_paths - 1) % 100 == 0 && queued_paths > 1)  {
 
     q_prev100->next_100 = q;
     q_prev100 = q;
@@ -5628,6 +5646,12 @@ static u8 fuzz_one(char** argv) {
 
     if (queue_cur->cal_failed < CAL_CHANCES) {
 
+      /* Reset exec_cksum to tell calibrate_case to re-execute the testcase
+         avoiding the usage of an invalid trace_bits.
+         For more info: https://github.com/AFLplusplus/AFLplusplus/pull/425 */
+
+      queue_cur->exec_cksum = 0;
+
       res = calibrate_case(argv, queue_cur, in_buf, queue_cycle - 1, 0);
 
       if (res == FAULT_ERROR)
@@ -6607,7 +6631,7 @@ skip_interest:
   stage_name  = "user extras (insert)";
   stage_short = "ext_UI";
   stage_cur   = 0;
-  stage_max   = extras_cnt * len;
+  stage_max   = extras_cnt * (len + 1);
 
   orig_hit_cnt = new_hit_cnt;
 
@@ -7759,14 +7783,16 @@ static void usage(u8* argv0) {
        "Power schedules:\n\n"
 
        "  -p            - anneal or average or none\n"
-       "  -s N          - set value of scale_exponent\n"
-       "  -b            - age or churn only\n\n"
+       "  -s            - set value of scale_exponent\n"
 
        "Other stuff:\n\n"
 
        "  -T text       - text banner to show on the screen\n"
        "  -M / -S id    - distributed mode (see parallel_fuzzing.txt)\n"
-       "  -C            - crash exploration mode (the peruvian rabbit thing)\n\n"
+       "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
+       "  -V            - show version number and exit\n"
+       "  -b cpu_id     - bind the fuzzing process to the specified CPU core\n\n"
+
 
        "For additional tips, please consult %s/README.\n\n",
 
@@ -8454,7 +8480,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qp:eZs:H:A")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:b:t:T:dnCB:S:M:x:QVp:eZs:H:A")) > 0)
 
     switch (opt) {
 
@@ -8567,6 +8593,18 @@ int main(int argc, char** argv) {
         }
 
         break;
+      
+      case 'b': { /* bind CPU core */
+
+          if (cpu_to_bind_given) FATAL("Multiple -b options not supported");
+          cpu_to_bind_given = 1;
+
+          if (sscanf(optarg, "%u", &cpu_to_bind) < 1 ||
+              optarg[0] == '-') FATAL("Bad syntax used for -b");
+
+          break;
+
+      }
 
       case 'd': /* skip deterministic */
 
@@ -8655,6 +8693,11 @@ int main(int argc, char** argv) {
         MAX_BYTE_SCORE = 138;
         ACO_GRAV_BIAS = (1 - ACO_COEF) * INIT_BYTE_SCORE;
         break;
+
+      case 'V': /* Show version number */
+
+        /* Version number has been printed already, just quit. */
+        exit(0);
 
       default:
 
