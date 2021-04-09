@@ -17,18 +17,18 @@ LLVM 7.0.1
 ### install aflchurn
 We have two schemes of burst, one is the age of lines and the other is the number of changes of lines. 
 We can choose one of the schemes or both of them.
-- `export DISABLE_BURST_AGE=1`: disable rdays
-- `export ENABLE_RANK_AGE=rrank`: enable rrank and disable rdays
+- `export AFLCHURN_DISABLE_AGE=1`: disable rdays
+- `export AFLCHURN_ENABLE_RANK=rrank`: enable rrank and disable rdays
 
-- `export DISABLE_BURST_CHURN=1`: disable the number of changes of lines during build processd.
+- `export AFLCHURN_DISABLE_CHURN=1`: disable the number of changes of lines during build processd.
 
-    `export BURST_CHURN_SIG=change`: change; 
+    `export AFLCHURN_CHURN_SIG=change`: change; 
 
-    `export BURST_CHURN_SIG=change2`: change^2;
+    `export AFLCHURN_CHURN_SIG=change2`: change^2;
 
-    `export BURST_CHURN_SIG=logchange`: log2(change);
+    `export AFLCHURN_CHURN_SIG=logchange`: log2(change);
 
-- `export BURST_INST_RATIO=N`: N%, select N% BBs to be inserted churn/age
+- `export AFLCHURN_INST_RATIO=N`: N%, select N% BBs to be inserted churn/age
 
 
 Install
@@ -49,9 +49,9 @@ Be sure to also include CXX set to afl-clang-fast++ for C++ code.
 
 ### configure the time period to record churns
 
-    export BURST_SINCE_MONTHS=num_months
+    export AFLCHURN_SINCE_MONTHS=num_months
 
-e.g., `export BURST_SINCE_MONTHS=6` indicates recording changes in the recent 6 months
+e.g., `export AFLCHURN_SINCE_MONTHS=6` indicates recording changes in the recent 6 months
 
 ## run fuzzing
 
