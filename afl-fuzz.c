@@ -8887,16 +8887,9 @@ int main(int argc, char** argv) {
 
       tmp_id = current_entry = select_next_queue_entry();
       queue_cur = queue;
-      if (tmp_id < 99){
-        while (tmp_id--) queue_cur = queue_cur->next;
-      } else{
-        tmp_id++;
-        while (tmp_id >= 100){
-          queue_cur = queue_cur->next_100; 
-          tmp_id -= 100; 
-        }
-        while (tmp_id--) queue_cur = queue_cur->next;
-      }
+
+      while (tmp_id >= 100){ queue_cur = queue_cur->next_100; tmp_id -= 100; }
+      while (tmp_id--) queue_cur = queue_cur->next;
       
     } else {
       queue_cur = queue_cur->next;
