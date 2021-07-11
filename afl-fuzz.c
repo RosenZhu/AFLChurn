@@ -220,6 +220,7 @@ EXP_ST u32 queued_paths,              /* Total number of queued testcases */
            useless_at_start,          /* Number of useless starting paths */
            var_byte_count,            /* Bitmap bytes with var behavior   */
            current_entry,             /* Current queue entry ID           */
+           current_fuzzed_entry,      /* Current queue entry ID of fuzzed seeds*/
            havoc_div = 1;             /* Cycle count divisor for havoc    */
 
 EXP_ST u64 total_crashes,             /* Total number of crashes          */
@@ -324,7 +325,8 @@ struct queue_entry {
 static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top, /* Top of the list                  */
-                          *q_prev100; /* Previous 100 marker              */
+                          *q_prev100, /* Previous 100 marker              */
+                          *queue_unfuzzed_top; /* The beginning of the unfuzzed seed list */
 
 static struct queue_entry*
   top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
@@ -1288,8 +1290,10 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
     queue_top->next = q;
     queue_top = q;
+    /* If fuzzed list has reached its end (NULL), append new seed */
+    if (alias_seed_selection && !queue_unfuzzed_top) queue_unfuzzed_top = q;
 
-  } else q_prev100 = queue = queue_top = q;
+  } else q_prev100 = queue = queue_top = queue_unfuzzed_top = q;
 
   queued_paths++;
   pending_not_fuzzed++;
@@ -8878,18 +8882,29 @@ int main(int argc, char** argv) {
     if (!stop_soon && exit_1) stop_soon = 2;
 
     if (stop_soon) break;
+    
+    if (alias_seed_selection){
+      /* select seeds based on churn info. */
 
-    if (likely(alias_seed_selection)){
-      if (unlikely(prev_queued_alias < queued_paths)){
-        prev_queued_alias = queued_paths;
-        create_seed_alias_table();
+      /* If there is any unfuzzed seed, fuzz it first;
+         If queue_unfuzzed_top is NULL, there's no unfuzzed seed. */
+      if (queue_unfuzzed_top){
+        queue_cur = queue_unfuzzed_top;
+        queue_unfuzzed_top = queue_unfuzzed_top->next;
+        current_entry = ++current_fuzzed_entry;
+      } else {
+        /* rebuild alias table if new seeds are added */
+        if (prev_queued_alias < queued_paths){
+          prev_queued_alias = queued_paths;
+          create_seed_alias_table();
+        }
+
+        tmp_id = current_entry = select_next_queue_entry();
+        queue_cur = queue;
+
+        while (tmp_id >= 100){ queue_cur = queue_cur->next_100; tmp_id -= 100; }
+        while (tmp_id--) queue_cur = queue_cur->next;
       }
-
-      tmp_id = current_entry = select_next_queue_entry();
-      queue_cur = queue;
-
-      while (tmp_id >= 100){ queue_cur = queue_cur->next_100; tmp_id -= 100; }
-      while (tmp_id--) queue_cur = queue_cur->next;
       
     } else {
       queue_cur = queue_cur->next;
