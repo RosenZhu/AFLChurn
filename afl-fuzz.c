@@ -125,6 +125,7 @@ static u8 *seed_prob_norm_buf,                  /* normed probability of seeds *
           *byte_in_scratch_buf;                  /* For ACO */
 
 u8 alias_seed_selection = 0;        /* Use alias method to select next seed based on burst */
+u8 fuzz_all_first = 0;              /* All seeds are fuzzed at least once before using alias method to select next seed */
 
 double total_log_bitmap_size = 0;       /* Total value of log(bitmap_size) */
 
@@ -4759,7 +4760,7 @@ static void show_stats(void) {
 
   sprintf(tmp, "%.3f", show_factor);
 
-  SAYF (bSTG bV bSTOP "  burst factor : " cRST "%-22s " bSTG bV "\n", tmp);
+  SAYF (bSTG bV bSTOP "aflchurn factor: " cRST "%-22s " bSTG bV "\n", tmp);
 
   /* Aaaalmost there... hold on! */
 
@@ -7783,11 +7784,6 @@ static void usage(u8* argv0) {
        "  -d            - quick & dirty mode (skips deterministic steps)\n"
        "  -n            - fuzz without instrumentation (dumb mode)\n"
        "  -x dir        - optional fuzzer dictionary (see README)\n\n"
-      
-       "Power schedules:\n\n"
-
-       "  -p            - anneal or average or none\n"
-       "  -s            - set value of scale_exponent\n"
 
        "Other stuff:\n\n"
 
@@ -7796,6 +7792,16 @@ static void usage(u8* argv0) {
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -V            - show version number and exit\n"
        "  -b cpu_id     - bind the fuzzing process to the specified CPU core\n\n"
+
+      "AFLChurn parameters:\n\n"
+
+       "Power schedules:\n"
+       "  -p            - anneal or none\n"
+       "  -s integer    - set value of scale_exponent\n"
+       "  -e            - disable ACO byte schedule\n"
+       "  -Z            - enable seed schedule\n"
+       "  -H float      - set fitness_exponent\n"
+       "  -A            - increase/decrease mode for ACO\n\n"
 
 
        "For additional tips, please consult %s/README.\n\n",
@@ -8484,7 +8490,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:b:t:T:dnCB:S:M:x:QVp:eZs:H:A")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:b:t:T:dnCB:S:M:x:QVp:eZs:H:AD")) > 0)
 
     switch (opt) {
 
@@ -8678,6 +8684,10 @@ int main(int argc, char** argv) {
 
       case 'Z':
         alias_seed_selection = 1;
+        break;
+
+      case 'D':
+        fuzz_all_first = 1;
         break;
 
       case 's':
@@ -8888,7 +8898,7 @@ int main(int argc, char** argv) {
 
       /* If there is any unfuzzed seed, fuzz it first;
          If queue_unfuzzed_top is NULL, there's no unfuzzed seed. */
-      if (queue_unfuzzed_top){
+      if (queue_unfuzzed_top && fuzz_all_first){
         queue_cur = queue_unfuzzed_top;
         queue_unfuzzed_top = queue_unfuzzed_top->next;
         current_entry = ++current_fuzzed_entry;

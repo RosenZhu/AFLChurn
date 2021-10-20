@@ -133,7 +133,7 @@ double inst_norm_age(int max_days, int days_since_last_change){
 
 }
 
-double inst_norm_rank(unsigned int max_rank, int line_rank){
+double inst_norm_rank(int max_rank, int line_rank){
   double norm_ranks;
   // rlogrank
   // if (line_rank < 0) norm_ranks = 1;
@@ -252,8 +252,8 @@ int get_threshold_changes(std::string directory){
   return change_threshold;
 }
 
-/* if return value is 0, something wrong happens */
-unsigned long get_commit_time_days(std::string directory, std::string git_cmd){
+/* if return value is WRONG_VALUE, something wrong happens */
+int get_commit_time_days(std::string directory, std::string git_cmd){
   unsigned long unix_time = 0;
   FILE *dfp;
   std::ostringstream datecmd;
@@ -264,7 +264,11 @@ unsigned long get_commit_time_days(std::string directory, std::string git_cmd){
   dfp = popen(datecmd.str().c_str(), "r");
 
   if (NULL == dfp) return WRONG_VALUE;
-  if (fscanf(dfp, "%lu", &unix_time) != 1) return WRONG_VALUE;
+  if (fscanf(dfp, "%lu", &unix_time) != 1){
+    pclose(dfp);
+    return WRONG_VALUE;
+  } 
+
   pclose(dfp);
 
   return unix_time / 86400;
@@ -272,8 +276,8 @@ unsigned long get_commit_time_days(std::string directory, std::string git_cmd){
 }
 
 /* Get the number of commits before HEAD;
-  if return value is 0, something wrong happens */
-unsigned int get_max_ranks(std::string git_directory){
+  if return value is WRONG_VALUE, something wrong happens */
+int get_max_ranks(std::string git_directory){
 
   FILE *dfp;
   unsigned int head_num_parents;
@@ -282,7 +286,11 @@ unsigned int get_max_ranks(std::string git_directory){
           << " && git rev-list --count HEAD";
   dfp = popen(headcmd.str().c_str(), "r");
   if (NULL == dfp) return WRONG_VALUE;
-  if (fscanf(dfp, "%u", &head_num_parents) != 1) return WRONG_VALUE;
+  if (fscanf(dfp, "%u", &head_num_parents) != 1){
+    pclose(dfp);
+    return WRONG_VALUE;
+  } 
+
   pclose(dfp);
 
   return head_num_parents;
@@ -529,10 +537,12 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
 
 /* get age of lines using git command line. 
   git_directory: /home/usrname/repo/
+  head_commit_days: unix time of head commit, in days;
+  init_commit_days: unix time of initial 
 */
 bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
                     std::map<std::string, std::map<unsigned int, double>> &file2line2age_map,
-                    unsigned long head_commit_days, unsigned long init_commit_days){
+                    int head_commit_days, int init_commit_days){
 
   std::map<unsigned int, double> line_age_days;
 
@@ -585,7 +595,7 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
 bool cal_line_age_rank(std::string relative_file_path, std::string git_directory,
                 std::map<std::string, std::map<unsigned int, double>> &file2line2rank_map,
                 std::map<std::string, double> &commit2rank,
-                unsigned int head_num_parents){
+                int head_num_parents){
 
   char line_commit_sha[256];
   FILE *dfp, *curdfp;
@@ -833,8 +843,8 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   // Choose part of BBs to insert the age/change signal
   int changes_inst_threshold = 0; // for change
-  unsigned long init_commit_days = 0, head_commit_days = 0; // for age
-  unsigned int head_num_parents = 0; // for ranks
+  int init_commit_days = 0, head_commit_days = 0; // for age
+  int head_num_parents = 0; // for ranks
   double norm_change_thd = 0, norm_age_thd = 0, norm_rank_thd = 0;
 
   std::set<unsigned int> bb_lines;
