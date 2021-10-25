@@ -386,14 +386,16 @@ void git_diff_current_head(std::string cur_commit_sha, std::string git_directory
 
     /* if there's no diff in current commit and HEAD commit;
      there's no change of the file between two commits;
-     so any change in current commit (compared to its parents) counts for the HEAD commit*/
-
+     so any change in current commit (compared to its parents) counts for the HEAD commit.
+     CHECK: If an empty line is added, there's no diff result. 
+     But the line number in current commit and HEAD commit may be different. */
+    /*
     if (!cur_head_has_diff){
         for (auto mit = changed_lines_from_show.begin(); mit != changed_lines_from_show.end(); ++mit){
             if (lines2changes.count(*mit)) lines2changes[*mit]++;
             else lines2changes[*mit] = 1;
         }
-    }
+    }*/
 
     rc = pclose(fp);
     if(-1 == rc){
@@ -516,6 +518,17 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
       
   }
 
+  /* Get changes in HEAD */
+  changed_lines_cur_commit.clear();
+  git_show_current_changes("HEAD", git_directory, 
+                                  relative_file_path, changed_lines_cur_commit);
+  if (!changed_lines_cur_commit.empty()){
+    for (auto lchead : changed_lines_cur_commit){
+      if (lines2changes.count(lchead)) lines2changes[lchead] ++;
+      else lines2changes[lchead] = 1;
+    }
+  }
+
   /* Get changes */
   if (!lines2changes.empty()){
     // logchanges
@@ -524,8 +537,8 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
     }
 
     file2line2change_map[relative_file_path] = tmp_line2changes;
-    
   }
+  
   
   rc = pclose(fp);
   if(-1 == rc){
@@ -957,7 +970,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
       double bb_rank_age = 0, bb_age_best = 0, bb_burst_best = 0, bb_rank_best = 0;
-      double bb_raw_fitness, tmp_score;
+      double bb_raw_fitness = 0, tmp_score = 0;
       bool bb_raw_fitness_flag = false;
       
       if (!bb_lines.empty())
@@ -1117,19 +1130,19 @@ bool AFLCoverage::runOnModule(Module &M) {
         }
       } else if ((use_cmd_age || use_cmd_age_rank) && use_cmd_change){
         /* both age and change are enabled */
-        if ((bb_rank_age > 0 || bb_burst_best > 0) &&
+        /* Note: based on normolization, 
+                we skip BBs when either bb_rank_age=0 or bb_burst_best=0 */
+        if ((bb_rank_age > 0 && bb_burst_best > 0) &&
                 (bb_burst_best > norm_change_thd || bb_age_best > norm_age_thd
                    || bb_rank_best > norm_rank_thd || AFL_R(100) < bb_select_ratio)){
             // change
-            if (bb_burst_best > 0){
-              inst_changes++;
-              module_total_changes += bb_burst_best;
-            } else bb_burst_best = 1;
+            inst_changes++;
+            module_total_changes += bb_burst_best;
+            
             // age
-            if (bb_rank_age > 0){
-              inst_ages ++;
-              module_total_ages += bb_rank_age;
-            } else bb_rank_age = 1;
+            inst_ages ++;
+            module_total_ages += bb_rank_age;
+            
             // combine
             bb_raw_fitness = bb_burst_best * bb_rank_age;
             bb_raw_fitness_flag = true;
