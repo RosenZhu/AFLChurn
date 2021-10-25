@@ -371,7 +371,7 @@ enum{
 /* Ratio (%) to select a BB to insert age/churn */
 #define CHURN_INSERT_RATIO    30
 
-#define WRONG_VALUE     0
+#define WRONG_VALUE     -1
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 

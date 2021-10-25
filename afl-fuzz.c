@@ -125,6 +125,7 @@ static u8 *seed_prob_norm_buf,                  /* normed probability of seeds *
           *byte_in_scratch_buf;                  /* For ACO */
 
 u8 alias_seed_selection = 0;        /* Use alias method to select next seed based on burst */
+u8 fuzz_all_first = 0;              /* All seeds are fuzzed at least once before using alias method to select next seed */
 
 double total_log_bitmap_size = 0;       /* Total value of log(bitmap_size) */
 
@@ -220,6 +221,7 @@ EXP_ST u32 queued_paths,              /* Total number of queued testcases */
            useless_at_start,          /* Number of useless starting paths */
            var_byte_count,            /* Bitmap bytes with var behavior   */
            current_entry,             /* Current queue entry ID           */
+           current_fuzzed_entry,      /* Current queue entry ID of fuzzed seeds*/
            havoc_div = 1;             /* Cycle count divisor for havoc    */
 
 EXP_ST u64 total_crashes,             /* Total number of crashes          */
@@ -324,7 +326,8 @@ struct queue_entry {
 static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top, /* Top of the list                  */
-                          *q_prev100; /* Previous 100 marker              */
+                          *q_prev100, /* Previous 100 marker              */
+                          *queue_unfuzzed_top; /* The beginning of the unfuzzed seed list */
 
 static struct queue_entry*
   top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
@@ -1288,8 +1291,10 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
     queue_top->next = q;
     queue_top = q;
+    /* If fuzzed list has reached its end (NULL), append new seed */
+    if (alias_seed_selection && !queue_unfuzzed_top) queue_unfuzzed_top = q;
 
-  } else q_prev100 = queue = queue_top = q;
+  } else q_prev100 = queue = queue_top = queue_unfuzzed_top = q;
 
   queued_paths++;
   pending_not_fuzzed++;
@@ -4755,7 +4760,7 @@ static void show_stats(void) {
 
   sprintf(tmp, "%.3f", show_factor);
 
-  SAYF (bSTG bV bSTOP "  burst factor : " cRST "%-22s " bSTG bV "\n", tmp);
+  SAYF (bSTG bV bSTOP "aflchurn factor: " cRST "%-22s " bSTG bV "\n", tmp);
 
   /* Aaaalmost there... hold on! */
 
@@ -7779,11 +7784,6 @@ static void usage(u8* argv0) {
        "  -d            - quick & dirty mode (skips deterministic steps)\n"
        "  -n            - fuzz without instrumentation (dumb mode)\n"
        "  -x dir        - optional fuzzer dictionary (see README)\n\n"
-      
-       "Power schedules:\n\n"
-
-       "  -p            - anneal or average or none\n"
-       "  -s            - set value of scale_exponent\n"
 
        "Other stuff:\n\n"
 
@@ -7792,6 +7792,16 @@ static void usage(u8* argv0) {
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -V            - show version number and exit\n"
        "  -b cpu_id     - bind the fuzzing process to the specified CPU core\n\n"
+
+      "AFLChurn parameters:\n\n"
+
+       "Power schedules:\n"
+       "  -p            - anneal or none\n"
+       "  -s integer    - set value of scale_exponent\n"
+       "  -e            - disable ACO byte schedule\n"
+       "  -Z            - enable seed schedule\n"
+       "  -H float      - set fitness_exponent\n"
+       "  -A            - increase/decrease mode for ACO\n\n"
 
 
        "For additional tips, please consult %s/README.\n\n",
@@ -8480,7 +8490,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:b:t:T:dnCB:S:M:x:QVp:eZs:H:A")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:b:t:T:dnCB:S:M:x:QVp:eZs:H:AD")) > 0)
 
     switch (opt) {
 
@@ -8674,6 +8684,10 @@ int main(int argc, char** argv) {
 
       case 'Z':
         alias_seed_selection = 1;
+        break;
+
+      case 'D':
+        fuzz_all_first = 1;
         break;
 
       case 's':
@@ -8878,23 +8892,27 @@ int main(int argc, char** argv) {
     if (!stop_soon && exit_1) stop_soon = 2;
 
     if (stop_soon) break;
+    
+    if (alias_seed_selection){
+      /* select seeds based on churn info. */
 
-    if (likely(alias_seed_selection)){
-      if (unlikely(prev_queued_alias < queued_paths)){
-        prev_queued_alias = queued_paths;
-        create_seed_alias_table();
-      }
-
-      tmp_id = current_entry = select_next_queue_entry();
-      queue_cur = queue;
-      if (tmp_id < 99){
-        while (tmp_id--) queue_cur = queue_cur->next;
-      } else{
-        tmp_id++;
-        while (tmp_id >= 100){
-          queue_cur = queue_cur->next_100; 
-          tmp_id -= 100; 
+      /* If there is any unfuzzed seed, fuzz it first;
+         If queue_unfuzzed_top is NULL, there's no unfuzzed seed. */
+      if (queue_unfuzzed_top && fuzz_all_first){
+        queue_cur = queue_unfuzzed_top;
+        queue_unfuzzed_top = queue_unfuzzed_top->next;
+        current_entry = ++current_fuzzed_entry;
+      } else {
+        /* rebuild alias table if new seeds are added */
+        if (prev_queued_alias < queued_paths){
+          prev_queued_alias = queued_paths;
+          create_seed_alias_table();
         }
+
+        tmp_id = current_entry = select_next_queue_entry();
+        queue_cur = queue;
+
+        while (tmp_id >= 100){ queue_cur = queue_cur->next_100; tmp_id -= 100; }
         while (tmp_id--) queue_cur = queue_cur->next;
       }
       
