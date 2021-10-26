@@ -53,85 +53,6 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
-// double inst_norm_age(int max_days, int days_since_last_change){
-//   double norm_days;
-//   // if (days_since_last_change < 0) norm_days = 1;
-//   // else norm_days = 
-//   //     1 / (log2(days_since_last_change + 2) * log2(days_since_last_change + 2));
-
-//   /* Normalize 1/days */
-//   if (days_since_last_change <= 0 || max_days <= 1) {
-//     norm_days = 1;
-//     WARNF("Current days are less than 0 or maximum days are less than 1.");
-//   }
-//   else{
-//     norm_days = (double)(max_days - days_since_last_change) / 
-//                             (days_since_last_change * (max_days - 1));
-//   }
-
-//   return norm_days;
-
-// }
-
-// double inst_norm_rank(int max_rank, int line_rank){
-//   double norm_ranks;
-//   // rlogrank
-//   // if (line_rank < 0) norm_ranks = 1;
-//   // else norm_ranks = 1 / log2(line_rank + 2);
-
-//   // log2rank
-//   // if (max_rank >= 1){
-//   //   if (line_rank < 0) norm_ranks = 1;
-//   //   else norm_ranks = (log2(max_rank + 1) - log2(line_rank + 1)) / log2(max_rank + 1);
-//   // }
-
-//   /* rrank */
-//   if (line_rank <= 0) {
-//     norm_ranks = 1;
-//     WARNF("Rank of lines is less than 0.");
-//   }
-//   else norm_ranks = 1 / (double)line_rank;
-
-//   return norm_ranks;
-
-// }
-
-// double inst_norm_change(unsigned int num_changes, unsigned short change_select){
-//   double norm_chg = 0;
-
-//   switch(change_select){
-//     case CHURN_LOG_CHANGE:
-//       // logchanges
-//       if (num_changes < 0) norm_chg = 0;
-//       else norm_chg = log2(num_changes + 1);
-//       break;
-
-//     case CHURN_CHANGE:
-//       norm_chg = num_changes;
-//       break;
-
-//     case CHURN_CHANGE2:
-//       // change^2
-//       norm_chg = (double)num_changes * num_changes;
-//       break;
-//     default:
-//       FATAL("Wrong CHURN_CHANGE type!");
-//   }
-//   // // logchanges
-//   // if (num_changes < 0) norm_chg = 0;
-//   // else norm_chg = log2(num_changes + 1);
-
-//   // // change^2
-//   // norm_chg = num_changes * num_changes;
-    
-//   // // xlogchange
-//   //   if (num_changes < 0) norm_chg = 0;
-//   //   else norm_chg = (num_changes + 1) * log2(num_changes + 1);
-
-//   return norm_chg;
-
-// }
-
 
 /* use popen() to execute git command */
 std::string execute_git_cmd (std::string directory, std::string str_cmd){
@@ -149,7 +70,7 @@ std::string execute_git_cmd (std::string directory, std::string str_cmd){
 	// when cmd fail, output "fatal: ...";
   // when succeed, output result
   if (fscanf(fp, "%s", ch_git_res) == 1) {
-    str_res.assign(ch_git_res);  //, strlen(ch_git_res)
+    str_res.assign(ch_git_res);
   }
 
   if (startsWith(str_res, "fatal")){
@@ -396,199 +317,6 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
     }
 }
 
-// /* use git command to get line changes */
-// void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
-//                     std::map<std::string, std::map<unsigned int, double>> &file2line2change_map,
-//                     unsigned short change_sig){
-    
-//   std::ostringstream cmd;
-//   std::string str_cur_commit_sha;
-//   char ch_cur_commit_sha[128];
-//   int rc = 0;
-//   FILE *fp;
-//   std::set<unsigned int> changed_lines_cur_commit;
-//   std::map <unsigned int, unsigned int> lines2changes;
-//   std::map <unsigned int, double> tmp_line2changes;
-  
-//   // get the commits that change the file of relative_file_path
-//   // result: commit short SHAs
-//   // TODO: If the file name changed, it cannot get the changed lines.
-//   //  --since=10.years 
-//   char* ch_month = getenv("AFLCHURN_SINCE_MONTHS");
-//   if (ch_month){
-//     std::string since_month(ch_month);
-//     if (since_month.find_first_not_of("0123456789") == std::string::npos){ // all digits
-      
-//       cmd << "cd " << git_directory 
-//           << " && git log --since=" << ch_month << ".months"
-//           << " --follow --oneline --format=\"%h\" -- " 
-//           << relative_file_path << " | grep -Po \"^[0-9a-f]*$\"";
-          
-//     } else {
-//       ch_month = NULL; // if env variable is not digits, use all commits
-//     }
-//   }
-  
-//   if (!ch_month){
-
-//     cmd << "cd " << git_directory 
-//         << " && git log" 
-//         <<" --follow --oneline --format=\"%h\" -- " 
-//         << relative_file_path
-//         << " | grep -Po \"^[0-9a-f]*$\""; 
-//   }
-  
-//   fp = popen(cmd.str().c_str(), "r");
-//   if(NULL == fp) return;
-//   /* get lines2changes: git log -> git show -> git diff
-//     "git log -- filename": get commits SHAs changing the file
-//     "git show $commit_sha -- filename": get changed lines in current commit
-//     "git diff $commit_sha HEAD -- filename": get the related lines in HEAD commit
-//     */
-//   while(fscanf(fp, "%s", ch_cur_commit_sha) == 1){
-//       str_cur_commit_sha.clear();
-//       str_cur_commit_sha.assign(ch_cur_commit_sha);
-//       // get changed_lines_cur_commit: the change lines in current commit
-//       changed_lines_cur_commit.clear();
-//       git_show_current_changes(str_cur_commit_sha, git_directory, 
-//                                   relative_file_path, changed_lines_cur_commit);
-//       // get lines2changes: related change lines in HEAD commit
-//       git_diff_current_head(str_cur_commit_sha, git_directory, relative_file_path, 
-//                               changed_lines_cur_commit, lines2changes);
-      
-//   }
-
-//   /* Get changes */
-//   if (!lines2changes.empty()){
-//     // logchanges
-//     for (auto l2c : lines2changes){
-//       tmp_line2changes[l2c.first] = inst_norm_change(l2c.second, change_sig);
-//     }
-
-//     file2line2change_map[relative_file_path] = tmp_line2changes;
-    
-//   }
-  
-//   rc = pclose(fp);
-//   if(-1 == rc){
-//       printf("git log pclose() fails\n");
-//   }
-
-// }
-
-
-// /* get age of lines using git command line. 
-//   git_directory: /home/usrname/repo/
-//   head_commit_days: unix time of head commit, in days;
-//   init_commit_days: unix time of initial 
-// */
-// bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
-//                     std::map<std::string, std::map<unsigned int, double>> &file2line2age_map,
-//                     int head_commit_days, int init_commit_days){
-
-//   std::map<unsigned int, double> line_age_days;
-
-//   /*
-//   getting pairs [unix_time line_number]
-//   // cd ${git_directory} &&
-//   // git blame --date=unix ${relative_file_path} \
-//   // | grep -o -P "[0-9]{9}[0-9]? [0-9]+"
-//   */
-
-//   std::ostringstream cmd;
-//   int rc = 0;
-//   FILE *fp;
-//   unsigned long unix_time;
-//   unsigned int line;
-//   int days_since_last_change;
-
-//   if (head_commit_days==WRONG_VALUE || init_commit_days==WRONG_VALUE) return false;
-
-//   int max_days = head_commit_days - init_commit_days;
-
-//   cmd << "cd " << git_directory << " && git blame --date=unix " << relative_file_path
-//         << " | grep -o -P \"[0-9]{9}[0-9]? +[0-9]+\"";
-
-//   fp = popen(cmd.str().c_str(), "r");
-//   if(NULL == fp) return false;
-//   // get line by line
-//   while(fscanf(fp, "%lu %u", &unix_time, &line) == 2){
-//     days_since_last_change = head_commit_days - unix_time / 86400; //days
-
-//     line_age_days[line] = inst_norm_age(max_days, days_since_last_change);
-    
-//   }
-
-//   if (!line_age_days.empty())
-//       file2line2age_map[relative_file_path] = line_age_days;
-
-//   rc = pclose(fp);
-//   if(-1 == rc){
-//     printf("git blame pclose() fails\n");
-//   }
-
-//   return true;
-
-// }
-
-// /* get rank of line ages.
-//   rank = (the number of commits until HEAD) - (the number of commits until commit A);
-//  */
-// bool cal_line_age_rank(std::string relative_file_path, std::string git_directory,
-//                 std::map<std::string, std::map<unsigned int, double>> &file2line2rank_map,
-//                 std::map<std::string, double> &commit2rank,
-//                 int head_num_parents){
-
-//   char line_commit_sha[256];
-//   FILE *dfp, *curdfp;
-//   unsigned int nothing_line, line_num;
-//   std::map<unsigned int, double> line_rank;
-//   unsigned int cur_num_parents;
-//   int rank4line;
-
-//   if (head_num_parents == WRONG_VALUE) return false;
-
-//   /* output: commit_hash old_line_num current_line_num
-//         e.g., 9f1a353f68d6586b898c47c71a7631cdc816215f 167 346
-//    */
-//   std::ostringstream blamecmd;
-//   blamecmd << "cd " << git_directory
-//         << " && git blame -p -- " << relative_file_path
-//         << " | grep -o \"^[0-9a-f]* [0-9]* [0-9]*\"";
-
-//   dfp = popen(blamecmd.str().c_str(), "r");
-//   if(NULL == dfp) return false;
-
-//   std::ostringstream rankcmd;
-//   while (fscanf (dfp, "%s %u %u", line_commit_sha, &nothing_line, &line_num) == 3){
-//     std::string str_cmt(line_commit_sha);
-//     if (commit2rank.count(str_cmt)){
-//       line_rank[line_num] = commit2rank[str_cmt];
-//     } else {
-//       rankcmd.str("");
-//       rankcmd.clear();
-//       rankcmd << "cd " << git_directory
-//               << " && git rev-list --count "
-//               << line_commit_sha;
-//       curdfp = popen(rankcmd.str().c_str(), "r");
-//       if(NULL == curdfp) continue;
-//       if (fscanf (curdfp, "%u", &cur_num_parents) == 1){
-//         rank4line = head_num_parents - cur_num_parents;
-//         commit2rank[str_cmt] = line_rank[line_num] 
-//                              = inst_norm_rank(head_num_parents, rank4line);
-//       }
-//       pclose(curdfp);
-//     }
-    
-//   }
-//   pclose(dfp);
-
-//   if (!line_rank.empty()) file2line2rank_map[relative_file_path] = line_rank;
-//   return true;
-  
-// }
-
-
 
 /* Check if file exists in HEAD using command mode.
 return:
@@ -624,48 +352,6 @@ bool is_file_exist(std::string relative_file_path, std::string git_directory){
 
 }
 
-
-// /* Change the filename to relative path (relative to souce dir) without "../" or "./" in the path.
-// Input:
-//   relative_file_path: relative path of source files, relative to base_directory
-//   base_directory: absolute path of directories in building directory
-//   git_directory: absolute path of git repo directory (root of source code)
-// Output:
-//   clean relative path of a file
-//  */
-// std::string get_file_path_relative_to_git_dir(std::string relative_file_path, 
-//                     std::string base_directory, std::string git_directory){
-
-//     std::string clean_relative_path;
-
-  
-//   if (startsWith(relative_file_path, "/")){
-//     // "/path/to/configure": relative_file_path = /path/to/file.c
-//     // remove substring, which is the same as git_directory, from relative_file_path
-//     relative_file_path.erase(0, git_directory.length());  // relative path
-//     clean_relative_path = relative_file_path;
-//   } else{
-//     // "../configure" or "./configure"
-//     // relative_file_path could be src/file.c, build/../src/file.c, or src/./file.c
-//     // relative_file_path is relative to base_directory here
-//     base_directory.append("/");
-//     base_directory.append(relative_file_path);
-//     // remove "../" or "./"
-//     char* resolved_path = realpath(base_directory.c_str(), NULL);
-//     //TODO: why is it NULL?
-//     if (resolved_path == NULL) clean_relative_path = "";
-//     else{
-//       clean_relative_path.append(resolved_path);
-
-//       free(resolved_path);
-
-//       clean_relative_path.erase(0, git_directory.length());  // relative path
-//     }  
-//   }
-
-//   return clean_relative_path;
-
-// }
 
 /* Distribution: get rank of line ages.
   rank = (the number of commits until HEAD) - (the number of commits until commit A);
@@ -792,7 +478,7 @@ void get_line_age_dist(std::string relative_file_path, std::string git_directory
 void get_line_change_dist(std::string relative_file_path, std::string git_directory){
     
   std::ostringstream cmd;
-  std::string str_cur_commit_sha;
+  std::string str_cur_commit_sha, str_head_commit_sha;
   char ch_cur_commit_sha[128];
   int rc = 0;
   FILE *fp;
@@ -812,6 +498,10 @@ void get_line_change_dist(std::string relative_file_path, std::string git_direct
   
   fp = popen(cmd.str().c_str(), "r");
   if(NULL == fp) return;
+
+  /* Get the HEAD commit SHA */
+  str_head_commit_sha = execute_git_cmd(git_directory, "git rev-parse HEAD");
+
   /* get lines2changes: git log -> git show -> git diff
     "git log -- filename": get commits SHAs changing the file
     "git show $commit_sha -- filename": get changed lines in current commit
@@ -820,6 +510,20 @@ void get_line_change_dist(std::string relative_file_path, std::string git_direct
   while(fscanf(fp, "%s", ch_cur_commit_sha) == 1){
       str_cur_commit_sha.clear();
       str_cur_commit_sha.assign(ch_cur_commit_sha);
+
+      /* If it's a HEAD commit, skip it; Will get the changes in HEAD later */
+      if (!str_head_commit_sha.empty()){
+        if (str_head_commit_sha.length() <= str_cur_commit_sha.length()){
+          if (str_head_commit_sha.compare(0, str_head_commit_sha.length(), 
+                str_cur_commit_sha, 0, str_head_commit_sha.length()) == 0)
+                continue;
+        } else{
+          if (str_cur_commit_sha.compare(0, str_cur_commit_sha.length(), 
+                str_head_commit_sha, 0, str_cur_commit_sha.length()) == 0)
+                continue;
+        }
+      }
+
       // get changed_lines_cur_commit: the change lines in current commit
       changed_lines_cur_commit.clear();
       git_show_current_changes(str_cur_commit_sha, git_directory, 
@@ -914,13 +618,10 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
         get_line_change_dist(cur_rela_path, git_dir);
 
         /* Get distribution of age */
-        
         get_line_age_dist(cur_rela_path, git_dir, head_commit_days);
 
         /* Get distribution of #ranks */
         get_line_rank_dist(cur_rela_path, git_dir, max_num_ranks);
-
-        // break;
 
       }
 
@@ -929,11 +630,12 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
   }
 
   closedir(dir);
+
+  return;
 }
 
 
 int main(int argc, char *argv[]){
-
 
   std::string str_cur_workp;
   struct dirent *dp;
@@ -947,14 +649,17 @@ int main(int argc, char *argv[]){
 
   if (cur_workp){
     str_cur_workp.assign(cur_workp);
-    
+    free(cur_workp);
     cout << "Current working directory: " << str_cur_workp << endl;
     std::string cmd_repo ("git rev-parse --show-toplevel 2>&1");
     std::string git_path = execute_git_cmd(str_cur_workp, cmd_repo);
     std::cout << "git path: "<< git_path << std::endl;
 
-    free(cur_workp);
-
+    if (git_path.empty()) {
+      cout << "error: can't find git directory." << endl;
+      return 0;
+    }
+        
     // get distribution for age and churn
     std::string head_cmd("git show -s --format=%ct HEAD");
     head_commit_days = get_commit_time_days(git_path, head_cmd);
@@ -970,7 +675,7 @@ int main(int argc, char *argv[]){
         tmp_changes += distNumChange[i];
         if (tmp_changes >= num_keep_lines_change){
           thd_change = i;
-          cout << "threshold of change: " << thd_change << endl;
+          cout << "threshold of #change: " << thd_change << endl;
           break;
         }
 
@@ -978,7 +683,8 @@ int main(int argc, char *argv[]){
         
     }
     
-    num_keep_lines_age = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+    // num_keep_lines_age = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+    num_keep_lines_age = total_lines_changes * THRESHOLD_PERCENT_CHANGES / 100;
     for (int j=0; j<DISTRIBUTION_AGE; j++){
       if (distNumAge[j] !=0){
         cout << j << " days" << ": " << distNumAge[j] << " lines" << endl;
@@ -993,7 +699,8 @@ int main(int argc, char *argv[]){
     }
 
     // get distribution for ranks
-    num_keep_ranks = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+    // num_keep_ranks = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+    num_keep_ranks = total_lines_changes * THRESHOLD_PERCENT_CHANGES / 100;
     for (int k=0; k<DISTRIBUTION_RANK; k++){
       if (distNumRank[k] != 0){
         cout << k << " ranks" << ": " << distNumRank[k] << " lines" << endl;
@@ -1001,7 +708,7 @@ int main(int argc, char *argv[]){
         tmp_ranks += distNumRank[k];
         if (tmp_ranks >= num_keep_ranks){
           thd_rank = k;
-          cout << "threshold of rank: " << k << endl;
+          cout << "threshold of #rank: " << k << endl;
           break;
         }
       }

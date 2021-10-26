@@ -462,7 +462,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
                     unsigned short change_sig){
     
   std::ostringstream cmd;
-  std::string str_cur_commit_sha;
+  std::string str_cur_commit_sha, str_head_commit_sha;
   char ch_cur_commit_sha[128];
   int rc = 0;
   FILE *fp;
@@ -500,6 +500,10 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   
   fp = popen(cmd.str().c_str(), "r");
   if(NULL == fp) return;
+
+  /* Get the HEAD commit SHA */
+  str_head_commit_sha = execute_git_cmd(git_directory, "git rev-parse HEAD");
+
   /* get lines2changes: git log -> git show -> git diff
     "git log -- filename": get commits SHAs changing the file
     "git show $commit_sha -- filename": get changed lines in current commit
@@ -508,6 +512,20 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   while(fscanf(fp, "%s", ch_cur_commit_sha) == 1){
       str_cur_commit_sha.clear();
       str_cur_commit_sha.assign(ch_cur_commit_sha);
+      
+      /* If it's a head commit, skip it; Will get the changes in HEAD later */
+      if (!str_head_commit_sha.empty()){
+        if (str_head_commit_sha.length() <= str_cur_commit_sha.length()){
+          if (str_head_commit_sha.compare(0, str_head_commit_sha.length(), 
+                str_cur_commit_sha, 0, str_head_commit_sha.length()) == 0)
+                continue;
+        } else{
+          if (str_cur_commit_sha.compare(0, str_cur_commit_sha.length(), 
+                str_head_commit_sha, 0, str_cur_commit_sha.length()) == 0)
+                continue;
+        }
+      }
+
       // get changed_lines_cur_commit: the change lines in current commit
       changed_lines_cur_commit.clear();
       git_show_current_changes(str_cur_commit_sha, git_directory, 
