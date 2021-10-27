@@ -424,6 +424,8 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
             std::string relative_file_path, std::set<unsigned int> &changed_lines_from_show,
                 std::map <unsigned int, unsigned int> &lines2changes){
 
+    if (changed_lines_from_show.empty()) return;
+    
     std::ostringstream cmd_cur_head, cmd_parent_head;
     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, array_parent_changes[32] = {0},
           fatat[12] = {0}, tatat[12] = {0};
