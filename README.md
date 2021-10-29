@@ -18,6 +18,32 @@ cd llvm_mode
 make clean all
 ```
 
+## Get distribution of ages/ranks/changes
+
+When cloning your program, **please retain the entire commit history** (i.e., do **not** use `git clone --depth 1 ..`). Currently, we only support `git`.
+
+To get the distribution, run
+```bash
+$AFLCHURN/get-distribution -d /path/to/target/program/
+```
+Run `get-distribution -h` to get other options. 
+
+This will show something like 
+```
+[+] Threshold of #change: 15
+[+] Threshold of age(days): 3418
+[+] Threshold of #ranks: 197
+```
+The corresponding distribution files are in the root folder of the target program, namely `DISTRIBUTION_AGE.txt`, `DISTRIBUTION_CHANGES.txt`, `DISTRIBUTION_RANK.txt`, and `DISTRIBUTION_THRESHOLD.txt`.
+
+
+And then, before compiling, set the ENVs based on the result of `get-distribution`
+```bash
+export AFLCHURN_THRD_CHANGE=15
+export AFLCHURN_THRD_AGE=3418
+export AFLCHURN_THRD_RANK=197
+```
+
 ## Instrument your Program
 
 When cloning your program, **please retain the entire commit history** (i.e., do **not** use `git clone --depth 1 ..`). Currently, we only support `git`.
@@ -64,9 +90,23 @@ If `-e` is set, it will not use the ant colony optimization for mutation.
 
 e.g., `export AFLCHURN_SINCE_MONTHS=6` indicates recording changes in the recent 6 months.
 
+# TODO
 ## Experimental options
 ### alias method for seed selection
 | `-Z` | no args | alias method for seed selection | experimental |
 
 ### fuzz all seeds first before using alias method for seed selection
 `-D`: if set, fuzz all seeds first = true
+
+## set ENVs for inserting ratio
+Two steps to run aflchurn: 1) get distribution; 2) set ENVs for insertion ratio; 3) compile.
+
+| Envs | values | description | note |
+| :-------------------- | :--- | :--- | :---- |
+| `AFLCHURN_INST_RATIO` | integer | randomly select N% BBs to be inserted churn/age | default: 10|
+| `AFLCHURN_THRD_CHANGE`| integer | always insert info when a BB's #change is larger than it | default: 10|
+| `AFLCHURN_THRD_AGE`| integer | always insert info when a BB's age (days) is younger than it | default: 200|
+| `AFLCHURN_THRD_RANK` | integer |  always insert info when a BB's rank is smaller than it | default: 200|
+
+`default`: If not set, the corresponding variables will be set to default values
+

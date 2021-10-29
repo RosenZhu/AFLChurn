@@ -123,8 +123,9 @@ double inst_norm_age(int max_days, int days_since_last_change){
   if (days_since_last_change <= 0 || max_days <= 1) {
     norm_days = 1;
     WARNF("Current days are less than 0 or maximum days are less than 1.");
-  }
-  else{
+  } else if (max_days <= days_since_last_change){
+    norm_days = 0;
+  } else{
     norm_days = (double)(max_days - days_since_last_change) / 
                             (days_since_last_change * (max_days - 1));
   }
@@ -1046,15 +1047,37 @@ bool AFLCoverage::runOnModule(Module &M) {
     }
   }
 
+  /* ratio for randomly selected BBs */
   unsigned int bb_select_ratio = CHURN_INSERT_RATIO;
   char *bb_select_ratio_str = getenv("AFLCHURN_INST_RATIO");
 
   if (bb_select_ratio_str) {
-
     if (sscanf(bb_select_ratio_str, "%u", &bb_select_ratio) != 1 || !bb_select_ratio ||
         bb_select_ratio > 100)
       FATAL("Bad value of AFLCHURN_INST_RATIO (must be between 1 and 100)");
+  }
 
+  // Choose part of BBs to insert the age/change signal
+  unsigned int changes_inst_thred = THRD_CHANGES_DEFAULT, 
+  age_inst_thred = THRD_DAYS_DEFAULT, 
+  rank_inst_thred = THRD_RANKS_DEFAULT;
+
+  char *str_changes_inst_thred = getenv("AFLCHURN_THRD_CHANGE");
+  if (str_changes_inst_thred){
+    if (sscanf(str_changes_inst_thred, "%u", &changes_inst_thred) != 1)
+      FATAL("Bad value of AFLCHURN_THRD_CHANGE (must be larger than 0)");
+  }
+  
+  char *str_age_inst_thred = getenv("AFLCHURN_THRD_AGE");
+  if (str_age_inst_thred){
+    if (sscanf(str_age_inst_thred, "%u", &age_inst_thred) != 1)
+      FATAL("Bad value of AFLCHURN_THRD_AGE (must be larger than 0)");
+  }
+  
+  char *str_rank_inst_thred = getenv("AFLCHURN_THRD_RANK");
+  if (str_rank_inst_thred){
+    if (sscanf(str_rank_inst_thred, "%u", &rank_inst_thred) != 1)
+      FATAL("Bad value of AFLCHURN_THRD_RANK (must be larger than 0)");
   }
 
   /* Get globals for the SHM region and the previous location. Note that
@@ -1074,8 +1097,6 @@ bool AFLCoverage::runOnModule(Module &M) {
   double module_total_ages = 0, module_total_changes = 0, module_total_fitness = 0,
       module_ave_ages = 0, module_ave_chanegs = 0, module_ave_fitness = 0;
 
-  // Choose part of BBs to insert the age/change signal
-  int changes_inst_threshold = 0; // for change
   int init_commit_days = 0, head_commit_days = 0; // for age
   int head_num_parents = 0; // for ranks
   double norm_change_thd = 0, norm_age_thd = 0, norm_rank_thd = 0;
@@ -1146,7 +1167,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                     break;
                   }
                   // #change threshold
-                  changes_inst_threshold = get_threshold_changes(git_path);
+                  // changes_inst_thred = get_threshold_changes(git_path);
                   //get commit time
                   std::string head_cmd("git show -s --format=%ct HEAD");
                   head_commit_days = get_commit_time_days(git_path, head_cmd);
@@ -1155,11 +1176,11 @@ bool AFLCoverage::runOnModule(Module &M) {
                   /* Get the number of commits before HEAD */
                   head_num_parents = get_max_ranks(git_path);
                   /* thresholds */
-                  norm_change_thd = inst_norm_change(changes_inst_threshold, change_sig);
-                  norm_age_thd = inst_norm_age(head_commit_days - init_commit_days, THRESHOLD_DAYS);
-                  norm_rank_thd = inst_norm_rank(head_num_parents, THRESHOLD_RANKS);
+                  norm_change_thd = inst_norm_change(changes_inst_thred, change_sig);
+                  norm_age_thd = inst_norm_age(head_commit_days - init_commit_days, age_inst_thred);
+                  norm_rank_thd = inst_norm_rank(head_num_parents, rank_inst_thred);
 
-                  // std::cout << "changes threshold: "<< changes_inst_threshold
+                  // std::cout << "changes threshold: "<< changes_inst_thred
                   //         << "; head days: " << head_commit_days
                   //         << "; init days: " << init_commit_days
                   //         << "; head's parents: "<< head_num_parents
@@ -1322,7 +1343,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
         /* Age only; Add age of lines */
         if ((bb_rank_age > 0) && //only when age is assigned
-                  (bb_age_best > norm_age_thd || bb_rank_best > norm_rank_thd
+                  (bb_age_best >= norm_age_thd || bb_rank_best > norm_rank_thd
                       || AFL_R(100) < bb_select_ratio)){
 
           inst_ages ++;
@@ -1338,7 +1359,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
         if ((bb_burst_best > 0) && //only when change is assigned
-                (bb_burst_best > norm_change_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best >= norm_change_thd || AFL_R(100) < bb_select_ratio)){
           inst_changes++;
           module_total_changes += bb_burst_best;
 
@@ -1353,8 +1374,8 @@ bool AFLCoverage::runOnModule(Module &M) {
         /* Note: based on normolization, 
                 we skip BBs when either bb_rank_age=0 or bb_burst_best=0 */
         if ((bb_rank_age > 0 && bb_burst_best > 0) &&
-                (bb_burst_best > norm_change_thd || bb_age_best > norm_age_thd
-                   || bb_rank_best > norm_rank_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best >= norm_change_thd || bb_age_best >= norm_age_thd
+                   || bb_rank_best >= norm_rank_thd || AFL_R(100) < bb_select_ratio)){
             // change
             inst_changes++;
             module_total_changes += bb_burst_best;
@@ -1439,7 +1460,9 @@ bool AFLCoverage::runOnModule(Module &M) {
 
     OKF("BB Churn Raw Fitness. Instrumented %u BBs with average raw fitness of %.6f",
                     inst_fitness, module_ave_fitness);
-      
+
+    OKF("Thresholds: #changes:%u, age(days):%u, ranks:%u", 
+                changes_inst_thred, age_inst_thred, rank_inst_thred);
 
   }
 

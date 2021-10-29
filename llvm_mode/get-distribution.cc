@@ -48,6 +48,7 @@ static unsigned int distNumRank[DISTRIBUTION_RANK];
 
 static unsigned int total_lines_age = 0, total_lines_changes = 0;
 
+
 bool startsWith(std::string big_str, std::string small_str){
   if (big_str.compare(0, small_str.length(), small_str) == 0) return true;
   else return false;
@@ -831,90 +832,226 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
   return;
 }
 
+// false: files doesn't exist
+bool CheckandReadFiles(std::string git_dir){
+  bool isExist = true;
 
-int main(int argc, char *argv[]){
+  std::ifstream dist_age_file (git_dir + "/" + DIST_AGES_FILE);
+  std::ifstream dist_ranks_file (git_dir + "/" + DIST_RANKS_FILE);
+  std::ifstream dist_change_file (git_dir + "/" + DIST_CHANGES_FILE);
+  if (!dist_age_file.good() 
+        || !dist_ranks_file.good() 
+        || !dist_change_file.good()) isExist = false;
 
+  if (!isExist) return isExist;
+
+  cout << "The distribution files are under the folder " << git_dir << endl;
+  int index, lines_count, file_line;
+  string line;
+
+  if (dist_age_file.is_open()){
+    file_line = 0;
+    while(std::getline(dist_age_file, line)){
+      if (file_line != 0){
+        std::istringstream ssline(line);
+        ssline >> index >> lines_count;
+        // cout << index << " age(days): " << lines_count << " lines" << endl;
+        distNumAge[index] = lines_count;
+        total_lines_age += lines_count;
+      }
+
+      file_line++;
+    }
+    dist_age_file.close();
+  }
+
+  if (dist_ranks_file.is_open()){
+    file_line = 0;
+    while(std::getline(dist_ranks_file, line)){
+      if (file_line != 0){
+        std::istringstream ssline(line);
+        ssline >> index >> lines_count;
+        // cout << index << " #ranks: " << lines_count << " lines"<< endl;
+        distNumRank[index] = lines_count;
+      }
+
+      file_line++;
+    }
+    dist_ranks_file.close();
+  }
+
+  if (dist_change_file.is_open()){
+    file_line = 0;
+    while(std::getline(dist_change_file, line)){
+      if (file_line != 0){
+        std::istringstream ssline(line);
+        ssline >> index >> lines_count;
+        // cout << index << " #change: " << lines_count << " lines"<< endl;
+        distNumChange[index] = lines_count;
+        total_lines_changes += lines_count;
+      }
+
+      file_line++;
+    }
+    dist_change_file.close();
+  }
+
+  return isExist;
+}
+
+/* Display usage hints. */
+
+static void usage(char* argv0) {
+
+  SAYF("\n%s [ options ] \n\n"
+
+       "Required Parameters:\n\n"
+
+       "  -d dir        - directory of the target program.\n\n"
+
+       "Others:\n\n"
+
+       "  -p integer    - N%% for BBs that always insert churn info;\n"
+       "                  The default is set to %d.\n"
+       "  -h            - show this usage hint\n\n",
+
+       argv0, THRESHOLD_PERCENT_CHANGES);
+
+  exit(1);
+
+}
+
+int main(int argc, char **argv){
+
+  s32 opt;
+  char* prog_dir = NULL;
+  unsigned int per_keep = THRESHOLD_PERCENT_CHANGES; // percentage for always insertion
   std::string str_cur_workp;
   struct dirent *dp;
   int head_commit_days, // head commit in unix time, days
       max_num_ranks;   // #commits before HEAD
   int num_keep_lines_age, num_keep_ranks, num_keep_lines_change;
   int tmp_ages = 0, tmp_changes = 0, tmp_ranks = 0;
-  int thd_age = 0, thd_change = 0, thd_rank = 0; // threasholds
+  bool is_thrd_set = false, isRecorded = false;
+  std::ofstream dist_age_file, dist_ranks_file, dist_change_file, dist_threshold_file;
 
-  char *cur_workp = getcwd(NULL, 0);
-  if (cur_workp){
-    str_cur_workp.assign(cur_workp);
-    free(cur_workp);
-    cout << "Current working directory: " << str_cur_workp << endl;
-    std::string cmd_repo ("git rev-parse --show-toplevel 2>&1");
-    std::string git_path = execute_git_cmd(str_cur_workp, cmd_repo);
-    std::cout << "git path: "<< git_path << std::endl;
+  while ((opt = getopt(argc, argv, "d:p:h")) > 0){
+    switch (opt){
+      case 'd':
+        prog_dir = optarg;
+        break;
 
-    if (git_path.empty()) {
-      cout << "error: can't find git directory." << endl;
-      return 0;
+      case 'p':
+        if (sscanf(optarg, "%u", &per_keep) < 1 ||
+            optarg[0] == '-' || per_keep > 100) FATAL("Bad syntax for -p");
+
+        break;
+
+      case 'h':
+      default:
+        usage(argv[0]);
     }
+  }
+
+  if (!prog_dir)  usage(argv[0]);
+
+  str_cur_workp.assign(prog_dir);
+
+  std::string cmd_repo ("git rev-parse --show-toplevel 2>&1");
+  std::string git_path = execute_git_cmd(str_cur_workp, cmd_repo);
+
+  if (git_path.empty()) {
+    FATAL("Error: can't find git directory.");
+    return 0;
+  }
+
+  dist_threshold_file.open(git_path + "/" + DIST_THRESHOLD_FILE, std::ios::trunc);
+
+  isRecorded = CheckandReadFiles(git_path);
+
+  if (!isRecorded){
+    /* files for recording distribution */
+    dist_age_file.open(git_path + "/" + DIST_AGES_FILE);
+    dist_ranks_file.open(git_path + "/" + DIST_RANKS_FILE);
+    dist_change_file.open(git_path + "/" + DIST_CHANGES_FILE);
+
+    if(!dist_age_file.is_open() || !dist_ranks_file.is_open() ||
+          !dist_change_file.is_open() || ! dist_threshold_file.is_open()){
+      FATAL("Cannot create files for recording distribution info.");
+    }
+
+    cout << "The distribution files are under the folder " << git_path << endl;
         
     // get distribution for age and churn
     std::string head_cmd("git show -s --format=%ct HEAD");
     head_commit_days = get_commit_time_days(git_path, head_cmd);
     max_num_ranks = get_max_ranks(git_path);
+    if (max_num_ranks == WRONG_VALUE || head_commit_days == WRONG_VALUE)
+      FATAL("Cannot get the max #ranks and/or max days");
 
     listFilesGetDistribution(git_path, "", head_commit_days, max_num_ranks);
 
-    num_keep_lines_change = total_lines_changes * THRESHOLD_PERCENT_CHANGES / 100;
-    for (int i = DISTRIBUTION_CHANGE - 1; i > 0 ; i--){
-      if (distNumChange[i] != 0) {
-        cout << i << " changes" << ": " << distNumChange[i] << " lines" << endl;
-
-        tmp_changes += distNumChange[i];
-        if (tmp_changes >= num_keep_lines_change){
-          thd_change = i;
-          cout << "threshold of #change: " << thd_change << endl;
-          break;
-        }
-
-      }
-        
-    }
-    
-    // num_keep_lines_age = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
-    num_keep_lines_age = total_lines_changes * THRESHOLD_PERCENT_CHANGES / 100;
-    for (int j=0; j<DISTRIBUTION_AGE; j++){
-      if (distNumAge[j] !=0){
-        cout << j << " days" << ": " << distNumAge[j] << " lines" << endl;
-
-        tmp_ages += distNumAge[j];
-        if (tmp_ages >= num_keep_lines_age){
-          thd_age = j;
-          cout << "threshold of age: " << j << endl;
-          break;
-        }
-      }
-    }
-
-    // get distribution for ranks
-    // num_keep_ranks = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
-    num_keep_ranks = total_lines_changes * THRESHOLD_PERCENT_CHANGES / 100;
-    for (int k=0; k<DISTRIBUTION_RANK; k++){
-      if (distNumRank[k] != 0){
-        cout << k << " ranks" << ": " << distNumRank[k] << " lines" << endl;
-
-        tmp_ranks += distNumRank[k];
-        if (tmp_ranks >= num_keep_ranks){
-          thd_rank = k;
-          cout << "threshold of #rank: " << k << endl;
-          break;
-        }
-      }
-
-    }
-
-  } else{
-    cout << "error: can't find working current working directory." << endl;
   }
 
+  num_keep_lines_change = total_lines_changes * per_keep / 100;
+  is_thrd_set = false;
+  if(!isRecorded) dist_change_file << "#changes  lines_count" << endl;
+  for (int i = DISTRIBUTION_CHANGE - 1; i > 0 ; i--){
+    if (distNumChange[i] != 0) {
+      if(!isRecorded) dist_change_file << i << "  " << distNumChange[i] << endl;
+      tmp_changes += distNumChange[i];
+      if (tmp_changes >= num_keep_lines_change && !is_thrd_set){
+        OKF("Threshold of #change: %d", i);
+        dist_threshold_file << "Threshold of #change: " << i << endl;
+        is_thrd_set = true;
+        if(isRecorded) break;
+      }
+    }     
+  }
   
+  // num_keep_lines_age = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+  num_keep_lines_age = total_lines_changes * per_keep / 100;
+  is_thrd_set = false;
+  if(!isRecorded) dist_age_file << "age(days)  lines_count" <<endl;
+  for (int j=0; j<DISTRIBUTION_AGE; j++){
+    if (distNumAge[j] !=0){
+      if(!isRecorded) dist_age_file<< j <<"  "<< distNumAge[j] <<endl;
+      tmp_ages += distNumAge[j];
+      if (tmp_ages >= num_keep_lines_age  && !is_thrd_set){
+        OKF("Threshold of age(days): %d", j);
+        dist_threshold_file << "Threshold of age(days): " << j << endl;
+        is_thrd_set = true;
+        if(isRecorded) break;
+      }
+    }
+  }
+
+  // get distribution for ranks
+  // num_keep_ranks = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+  num_keep_ranks = total_lines_changes * per_keep / 100;
+  is_thrd_set = false;
+  if(!isRecorded) dist_ranks_file << "#ranks  lines_count" << endl;
+  for (int k=0; k<DISTRIBUTION_RANK; k++){
+    if (distNumRank[k] != 0){
+      if(!isRecorded) dist_ranks_file << k << "  " <<  distNumRank[k] << endl;
+      tmp_ranks += distNumRank[k];
+      if (tmp_ranks >= num_keep_ranks  && !is_thrd_set){
+        OKF("Threshold of #ranks: %d", k);
+        dist_threshold_file << "Threshold of #rank: " << k << endl;
+        is_thrd_set = true;
+        if(isRecorded) break;
+      }
+    }
+  }
+
+  if(!isRecorded){
+    dist_age_file.close();
+    dist_ranks_file.close();
+    dist_change_file.close();
+  }
+
+  dist_threshold_file.close();
+  
+
 }
 
