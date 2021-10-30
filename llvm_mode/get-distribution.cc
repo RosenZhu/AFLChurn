@@ -832,20 +832,16 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
   return;
 }
 
-// false: files doesn't exist
+// false: recording files don't exist
 bool CheckandReadFiles(std::string git_dir){
-  bool isExist = true;
 
   std::ifstream dist_age_file (git_dir + "/" + DIST_AGES_FILE);
   std::ifstream dist_ranks_file (git_dir + "/" + DIST_RANKS_FILE);
   std::ifstream dist_change_file (git_dir + "/" + DIST_CHANGES_FILE);
   if (!dist_age_file.good() 
         || !dist_ranks_file.good() 
-        || !dist_change_file.good()) isExist = false;
+        || !dist_change_file.good()) return false;
 
-  if (!isExist) return isExist;
-
-  cout << "The distribution files are under the folder " << git_dir << endl;
   int index, lines_count, file_line;
   string line;
 
@@ -896,7 +892,7 @@ bool CheckandReadFiles(std::string git_dir){
     dist_change_file.close();
   }
 
-  return isExist;
+  return true;
 }
 
 /* Display usage hints. */
@@ -943,7 +939,8 @@ int main(int argc, char **argv){
 
       case 'p':
         if (sscanf(optarg, "%u", &per_keep) < 1 ||
-            optarg[0] == '-' || per_keep > 100) FATAL("Bad syntax for -p");
+            optarg[0] == '-' || per_keep > 100 || per_keep == 0) 
+                FATAL("Bad syntax for -p");
 
         break;
 
@@ -966,7 +963,14 @@ int main(int argc, char **argv){
   }
 
   dist_threshold_file.open(git_path + "/" + DIST_THRESHOLD_FILE, std::ios::trunc);
+  if(!dist_threshold_file.is_open()){
+    FATAL("Cannot create file for recording thresholds info.");
+  }
+  dist_threshold_file << "Percentage of lines to insert churn info: " << per_keep << "%" << endl;
 
+  OKF("The distribution files are in %s", git_path.c_str());
+  OKF("Percentage of lines to insert churn info: %u%%", per_keep);
+  
   isRecorded = CheckandReadFiles(git_path);
 
   if (!isRecorded){
@@ -976,11 +980,11 @@ int main(int argc, char **argv){
     dist_change_file.open(git_path + "/" + DIST_CHANGES_FILE);
 
     if(!dist_age_file.is_open() || !dist_ranks_file.is_open() ||
-          !dist_change_file.is_open() || ! dist_threshold_file.is_open()){
+          !dist_change_file.is_open()){
       FATAL("Cannot create files for recording distribution info.");
     }
 
-    cout << "The distribution files are under the folder " << git_path << endl;
+    // cout << "The distribution files are under the folder " << git_path << endl;
         
     // get distribution for age and churn
     std::string head_cmd("git show -s --format=%ct HEAD");
@@ -1009,7 +1013,7 @@ int main(int argc, char **argv){
     }     
   }
   
-  // num_keep_lines_age = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+  // num_keep_lines_age = total_lines_age * per_keep / 100;
   num_keep_lines_age = total_lines_changes * per_keep / 100;
   is_thrd_set = false;
   if(!isRecorded) dist_age_file << "age(days)  lines_count" <<endl;
@@ -1027,7 +1031,7 @@ int main(int argc, char **argv){
   }
 
   // get distribution for ranks
-  // num_keep_ranks = total_lines_age * THRESHOLD_PERCENT_CHANGES / 100;
+  // num_keep_ranks = total_lines_age * per_keep / 100;
   num_keep_ranks = total_lines_changes * per_keep / 100;
   is_thrd_set = false;
   if(!isRecorded) dist_ranks_file << "#ranks  lines_count" << endl;

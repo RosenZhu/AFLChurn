@@ -18,11 +18,12 @@ cd llvm_mode
 make clean all
 ```
 
-## Get distribution of ages/ranks/changes
+## Instrument target program
+### 1. Get distribution of ages/ranks/changes
 
 When cloning your program, **please retain the entire commit history** (i.e., do **not** use `git clone --depth 1 ..`). Currently, we only support `git`.
 
-To get the distribution, run
+1.1 To get the distribution, run
 ```bash
 $AFLCHURN/get-distribution -d /path/to/target/program/
 ```
@@ -37,14 +38,15 @@ This will show something like
 The corresponding distribution files are in the root folder of the target program, namely `DISTRIBUTION_AGE.txt`, `DISTRIBUTION_CHANGES.txt`, `DISTRIBUTION_RANK.txt`, and `DISTRIBUTION_THRESHOLD.txt`.
 
 
-And then, before compiling, set the ENVs based on the result of `get-distribution`
+1.2 And then, before compiling, set the ENVs based on the result of `get-distribution`
 ```bash
 export AFLCHURN_THRD_CHANGE=15
 export AFLCHURN_THRD_AGE=3418
 export AFLCHURN_THRD_RANK=197
 ```
+If none of these environment variables are set, default values will apply, which are `AFLCHURN_THRD_CHANGE=10`, `AFLCHURN_THRD_AGE=200`, and `AFLCHURN_THRD_RANK=200`.
 
-## Instrument your Program
+### 2. Instrument your Program
 
 When cloning your program, **please retain the entire commit history** (i.e., do **not** use `git clone --depth 1 ..`). Currently, we only support `git`.
 
