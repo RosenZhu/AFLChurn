@@ -362,14 +362,22 @@ enum{
 #define WEIGHT_SHM         16
 
 /* Threshold of ages and changes */
-// Always instrument a BB if its age is less than days
-#define THRESHOLD_DAYS     30
-#define THRESHOLD_RANKS    30
+// default; Always instrument a BB if its age is less than days
+#define THRD_DAYS_DEFAULT     200
+#define THRD_RANKS_DEFAULT    200
+#define THRD_CHANGES_DEFAULT    10
 // Always instrument a BB if its #changes is larger than a percentage (%)
-#define THRESHOLD_PERCENT_CHANGES   10
+#define THRESHOLD_PERCENT_CHANGES   20
 
 /* Ratio (%) to select a BB to insert age/churn */
-#define CHURN_INSERT_RATIO    30
+#define CHURN_INSERT_RATIO    10
+
+/* Files that record distribution of ages/#changes/ranks */
+#define DIST_AGES_FILE  "DISTRIBUTION_AGE.txt"
+#define DIST_CHANGES_FILE  "DISTRIBUTION_CHANGES.txt"
+#define DIST_RANKS_FILE  "DISTRIBUTION_RANK.txt"
+#define DIST_THRESHOLD_FILE  "DISTRIBUTION_THRESHOLD.txt"
+
 
 #define WRONG_VALUE     -1
 
