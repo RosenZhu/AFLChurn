@@ -363,11 +363,11 @@ enum{
 
 /* Threshold of ages and changes */
 // default; Always instrument a BB if its age is less than days
-#define THRD_DAYS_DEFAULT     200
-#define THRD_RANKS_DEFAULT    200
-#define THRD_CHANGES_DEFAULT    10
+#define THRESHOLD_DAYS_DEFAULT     200
+#define THRESHOLD_RANKS_DEFAULT    200
+#define THRESHOLD_CHANGES_DEFAULT    10
 // Always instrument a BB if its #changes is larger than a percentage (%)
-#define THRESHOLD_PERCENT_CHANGES   20
+#define THRESHOLD_PERCENT_CHANGES   10
 
 /* Ratio (%) to select a BB to insert age/churn */
 #define CHURN_INSERT_RATIO    10
