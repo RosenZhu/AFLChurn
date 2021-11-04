@@ -27,6 +27,7 @@
 
 
 #include <dirent.h>
+#include <vector>
 
 
 using namespace std;
@@ -48,10 +49,30 @@ static unsigned int distNumRank[DISTRIBUTION_RANK];
 
 static unsigned int total_lines_age = 0, total_lines_changes = 0;
 
+/* if "fullStr" ends with "ending", return true.*/
+bool endsWith(std::string fullStr, std::string ending){
+  if (fullStr.length() >= ending.length()){
+    if (fullStr.compare(fullStr.length() - ending.length(), ending.length(), ending) == 0) return true;
+    else return false;
+  } else return false;
+
+}
 
 bool startsWith(std::string big_str, std::string small_str){
   if (big_str.compare(0, small_str.length(), small_str) == 0) return true;
   else return false;
+}
+
+// if both arrays are @@, return true.
+bool isATAT(char head_atat[], char tail_atat[]){
+  std::string str_head_atat, str_tail_atat;
+  str_head_atat.assign(head_atat);
+  str_tail_atat.assign(tail_atat);
+
+  if (str_head_atat.compare("@@")!=0 
+        || str_tail_atat.compare("@@")!=0) return false;
+
+  return true;
 }
 
 
@@ -86,6 +107,7 @@ std::string execute_git_cmd (std::string directory, std::string str_cmd){
   return str_res;
 
 }
+
 
 // /* Get the number of changes that is used to choose between "always instrument"
 //         or "insturment randomly".
@@ -169,7 +191,7 @@ int get_max_ranks(std::string git_directory){
 
 //     std::ostringstream cmd;
 //     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, 
-//           fatat[12] = {0}, tatat[12] = {0};
+//           head_atat[12] = {0}, tail_atat[12] = {0};
 //     std::string current_line_range, head_line_result;
 //     size_t cur_comma_pos, head_comma_pos;
 //     int rc = 0;
@@ -185,14 +207,14 @@ int get_max_ranks(std::string git_directory){
 //             (-): current commit; (+): HEAD commit
 //     */
 //     cmd << "cd " << git_directory << " && git diff -U0 " << cur_commit_sha << " HEAD -- " << relative_file_path
-//         << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+//         << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
 
 //     fp = popen(cmd.str().c_str(), "r");
 //     if(NULL == fp) return;
 //     /* -: current_commit;
 //        +: HEAD */
 //     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
-//     while(fscanf(fp, "%s %s %s %s", fatat, array_current_changes, array_head_changes, tatat) == 4){
+//     while(fscanf(fp, "%s %s %s %s", head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
 
 //         cur_head_has_diff = true;
         
@@ -284,10 +306,19 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
             std::string relative_file_path, std::set<unsigned int> &changed_lines_from_show,
                 std::map <unsigned int, unsigned int> &lines2changes){
     if (changed_lines_from_show.empty()) return;
-    
+    /* Check if the parent commit SHA exists: "git cat-file -t $cur_commit_sha^": 
+    if succeeds, output "commit"; if fails, output "fatal: Not a valid object name..." */
+    std::ostringstream parent_cmd;
+    parent_cmd << "cd " << git_directory
+                << "&& git cat-file -t "
+                << cur_commit_sha << "^"
+                << " 2>&1";
+    std::string parent_commit = execute_git_cmd(git_directory, parent_cmd.str());
+    if (parent_commit.empty()) return;
+
     std::ostringstream cmd_cur_head, cmd_parent_head;
     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, array_parent_changes[32] = {0},
-          fatat[12] = {0}, tatat[12] = {0};
+          head_atat[12] = {0}, tail_atat[12] = {0};
     std::string current_line_range, head_line_result;
     size_t cur_comma_pos, head_comma_pos;
     int rc = 0;
@@ -306,7 +337,7 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
     */
     cmd_cur_head << "cd " << git_directory << " && git diff -U0 " 
                  << cur_commit_sha << " HEAD -- " << relative_file_path
-                 << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+                 << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
     fp_cur = popen(cmd_cur_head.str().c_str(), "r");
 
     if(NULL == fp_cur) return;
@@ -314,7 +345,8 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
        +: HEAD */
     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
     while(fscanf(fp_cur, "%s %s %s %s", 
-                  fatat, array_current_changes, array_head_changes, tatat) == 4){
+                  head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
+        if(!isATAT(head_atat, tail_atat)) continue;
 
         current_line_range.clear(); /* The current commit side, (-) */
         current_line_range.assign(array_current_changes); // "-"
@@ -384,13 +416,15 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
     
     cmd_parent_head << "cd " << git_directory << " && git diff -U0 " 
                     << cur_commit_sha << "^" << " HEAD -- " << relative_file_path
-                    << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+                    << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
     fp_parent = popen(cmd_parent_head.str().c_str(), "r");
     if(NULL == fp_parent) return;
     memset(array_head_changes, 0, sizeof(array_head_changes));
 
-    while(fscanf(fp_parent, "%s %s %s %s", fatat, 
-                  array_parent_changes, array_head_changes, tatat) == 4){
+    while(fscanf(fp_parent, "%s %s %s %s", head_atat, 
+                  array_parent_changes, array_head_changes, tail_atat) == 4){
+        
+        if(!isATAT(head_atat, tail_atat)) continue;              
 
       head_line_result.clear(); /* The current commit side, (+) */
       head_line_result.assign(array_head_changes); // "+"
@@ -445,7 +479,7 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
     std::ostringstream cmd;
     
     char array_parent_changes[32] = {0}, array_current_changes[32] = {0}, 
-          fatat[12] = {0}, tatat[12] = {0};
+          head_atat[12] = {0}, tail_atat[12] = {0};
     std::string current_line_range;
     size_t comma_pos;
     int rc = 0;
@@ -455,13 +489,15 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
     // git show: parent_commit(-) current_commit(+)
     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
     cmd << "cd " << git_directory << " && git show --oneline -U0 " << cur_commit_sha << " -- " << relative_file_path
-          << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+          << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
 
     fp = popen(cmd.str().c_str(), "r");
     if(NULL == fp) return;
     // get numbers in (+): current commit
     
-    while(fscanf(fp, "%s %s %s %s", fatat, array_parent_changes, array_current_changes, tatat) == 4){
+    while(fscanf(fp, "%s %s %s %s", head_atat, array_parent_changes, array_current_changes, tail_atat) == 4){
+      
+      if(!isATAT(head_atat, tail_atat)) continue;
 
       current_line_range.clear(); /* The current commit side, (+) */
       current_line_range.assign(array_current_changes); // "+"
@@ -701,6 +737,7 @@ void get_line_change_dist(std::string relative_file_path, std::string git_direct
   while(fscanf(fp, "%s", ch_cur_commit_sha) == 1){
       str_cur_commit_sha.clear();
       str_cur_commit_sha.assign(ch_cur_commit_sha);
+      // std::cout << "current commit: " << str_cur_commit_sha << std::endl;
 
       /* If it's a HEAD commit, skip it; Will get the changes in HEAD later */
       if (!str_head_commit_sha.empty()){
@@ -769,6 +806,19 @@ void get_line_change_dist(std::string relative_file_path, std::string git_direct
 
 }
 
+/* White list for counting ages/#changes of C/C++ files. 
+  TODO: more to add. */
+bool isCountWhiteSuffix(std::string filename){
+  vector<string> whiteSuffix{".c", ".C", ".cc", ".CC", ".cpp", 
+            ".CPP", ".c++", ".cp", ".cxx", ".CXX", 
+            ".h", ".H", ".hpp", ".HPP", ".hh", ".hxx", ".h++"};
+  for (auto ws : whiteSuffix){
+    if (endsWith(filename, ws)) return true;
+  }
+
+  return false;
+}
+
 
 void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
                               int head_commit_days, int max_num_ranks){
@@ -807,8 +857,13 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
         listFilesGetDistribution(git_dir, cur_rela_path, head_commit_days, max_num_ranks);
 
       } else {// file
-        // cout << "it's a file: " << abs_file_path << endl;
-
+        // std::cout << "it's a file: " << abs_file_path << endl;
+        if (!isCountWhiteSuffix(fname)){
+          cout << "not a code file: " << fname << endl;
+          continue;
+        } else{
+          cout << "code file: "<< fname << endl;
+        }
         // file not in HEAD commit
         if (!is_file_exist(cur_rela_path, git_dir)) continue;
 
@@ -834,7 +889,7 @@ void listFilesGetDistribution(std::string git_dir, std::string relative_dir,
 
 // false: recording files don't exist
 bool CheckandReadFiles(std::string git_dir){
-
+  unsigned int record_total_lines_age = 0, record_total_lines_change = 0;
   std::ifstream dist_age_file (git_dir + "/" + DIST_AGES_FILE);
   std::ifstream dist_ranks_file (git_dir + "/" + DIST_RANKS_FILE);
   std::ifstream dist_change_file (git_dir + "/" + DIST_CHANGES_FILE);
@@ -853,12 +908,13 @@ bool CheckandReadFiles(std::string git_dir){
         ssline >> index >> lines_count;
         // cout << index << " age(days): " << lines_count << " lines" << endl;
         distNumAge[index] = lines_count;
-        total_lines_age += lines_count;
+        record_total_lines_age += lines_count;
       }
 
       file_line++;
     }
     dist_age_file.close();
+    total_lines_age = record_total_lines_age;
   }
 
   if (dist_ranks_file.is_open()){
@@ -884,12 +940,13 @@ bool CheckandReadFiles(std::string git_dir){
         ssline >> index >> lines_count;
         // cout << index << " #change: " << lines_count << " lines"<< endl;
         distNumChange[index] = lines_count;
-        total_lines_changes += lines_count;
+        record_total_lines_change += lines_count;
       }
 
       file_line++;
     }
     dist_change_file.close();
+    total_lines_changes = record_total_lines_change;
   }
 
   return true;

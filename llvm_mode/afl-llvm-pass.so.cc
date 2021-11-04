@@ -113,6 +113,18 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
+// if both arrays are @@, return true.
+bool isATAT(char head_atat[], char tail_atat[]){
+  std::string str_head_atat, str_tail_atat;
+  str_head_atat.assign(head_atat);
+  str_tail_atat.assign(tail_atat);
+
+  if (str_head_atat.compare("@@")!=0 
+        || str_tail_atat.compare("@@")!=0) return false;
+
+  return true;
+}
+
 double inst_norm_age(int max_days, int days_since_last_change){
   double norm_days;
   // if (days_since_last_change < 0) norm_days = 1;
@@ -122,7 +134,7 @@ double inst_norm_age(int max_days, int days_since_last_change){
   /* Normalize 1/days */
   if (days_since_last_change <= 0 || max_days <= 1) {
     norm_days = 1;
-    WARNF("Current days are less than 0 or maximum days are less than 1.");
+    if (days_since_last_change != 0) WARNF("Current days are less than 0 or maximum days are less than 1.");
   } else if (max_days <= days_since_last_change){
     norm_days = 0;
   } else{
@@ -226,32 +238,32 @@ std::string execute_git_cmd (std::string directory, std::string str_cmd){
 
 }
 
-/* Get the number of changes that is used to choose between "always instrument"
-        or "insturment randomly".
-Note: #changes of a file is always larger than #changes of a line in the file,
-    so THRESHOLD_PERCENT_CHANGES is set in a low value. */
-int get_threshold_changes(std::string directory){
+// /* Get the number of changes that is used to choose between "always instrument"
+//         or "insturment randomly".
+// Note: #changes of a file is always larger than #changes of a line in the file,
+//     so THRESHOLD_PERCENT_CHANGES is set in a low value. */
+// int get_threshold_changes(std::string directory){
 
-  std::ostringstream changecmd;
-  unsigned int largest_changes = 0;
-  int change_threshold = 0;
-  FILE *dfp;
-  // The maximum number of changes to any file.
-  changecmd << "cd " << directory
-          << " && git log --name-only --pretty=\"format:\""
-          << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
-          << " | tr -s ' ' | sed \"s/^ //g\" | cut -d\" \" -f1 | tail -n1";
-  dfp = popen(changecmd.str().c_str(), "r");
-  if(NULL == dfp) return WRONG_VALUE;
+//   std::ostringstream changecmd;
+//   unsigned int largest_changes = 0;
+//   int change_threshold = 0;
+//   FILE *dfp;
+//   // The maximum number of changes to any file.
+//   changecmd << "cd " << directory
+//           << " && git log --name-only --pretty=\"format:\""
+//           << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
+//           << " | tr -s ' ' | sed \"s/^ //g\" | cut -d\" \" -f1 | tail -n1";
+//   dfp = popen(changecmd.str().c_str(), "r");
+//   if(NULL == dfp) return WRONG_VALUE;
 
-  if (fscanf(dfp, "%u", &largest_changes) != 1) return WRONG_VALUE;
+//   if (fscanf(dfp, "%u", &largest_changes) != 1) return WRONG_VALUE;
 
-  change_threshold = (THRESHOLD_PERCENT_CHANGES * largest_changes) / 100;
+//   change_threshold = (THRESHOLD_PERCENT_CHANGES * largest_changes) / 100;
 
-  pclose(dfp);
+//   pclose(dfp);
 
-  return change_threshold;
-}
+//   return change_threshold;
+// }
 
 /* if return value is WRONG_VALUE, something wrong happens */
 int get_commit_time_days(std::string directory, std::string git_cmd){
@@ -309,7 +321,7 @@ int get_max_ranks(std::string git_directory){
 
 //     std::ostringstream cmd;
 //     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, 
-//           fatat[12] = {0}, tatat[12] = {0};
+//           head_atat[12] = {0}, tail_atat[12] = {0};
 //     std::string current_line_range, head_line_result;
 //     size_t cur_comma_pos, head_comma_pos;
 //     int rc = 0;
@@ -325,14 +337,14 @@ int get_max_ranks(std::string git_directory){
 //             (-): current commit; (+): HEAD commit
 //     */
 //     cmd << "cd " << git_directory << " && git diff -U0 " << cur_commit_sha << " HEAD -- " << relative_file_path
-//         << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+//         << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
 
 //     fp = popen(cmd.str().c_str(), "r");
 //     if(NULL == fp) return;
 //     /* -: current_commit;
 //        +: HEAD */
 //     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
-//     while(fscanf(fp, "%s %s %s %s", fatat, array_current_changes, array_head_changes, tatat) == 4){
+//     while(fscanf(fp, "%s %s %s %s", head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
 
 //         // cur_head_has_diff = true;
         
@@ -426,10 +438,19 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
                 std::map <unsigned int, unsigned int> &lines2changes){
 
     if (changed_lines_from_show.empty()) return;
+    /* Check if the parent commit SHA exists: "git cat-file -t $cur_commit_sha^": 
+    if succeeds, output "commit"; if fails, output "fatal: Not a valid object name..." */
+    std::ostringstream parent_cmd;
+    parent_cmd << "cd " << git_directory
+                << "&& git cat-file -t "
+                << cur_commit_sha << "^"
+                << " 2>&1";
+    std::string parent_commit = execute_git_cmd(git_directory, parent_cmd.str());
+    if (parent_commit.empty()) return;
     
     std::ostringstream cmd_cur_head, cmd_parent_head;
     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, array_parent_changes[32] = {0},
-          fatat[12] = {0}, tatat[12] = {0};
+          head_atat[12] = {0}, tail_atat[12] = {0};
     std::string current_line_range, head_line_result;
     size_t cur_comma_pos, head_comma_pos;
     int rc = 0;
@@ -448,7 +469,7 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
     */
     cmd_cur_head << "cd " << git_directory << " && git diff -U0 " 
                  << cur_commit_sha << " HEAD -- " << relative_file_path
-                 << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+                 << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
     fp_cur = popen(cmd_cur_head.str().c_str(), "r");
 
     if(NULL == fp_cur) return;
@@ -456,7 +477,8 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
        +: HEAD */
     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
     while(fscanf(fp_cur, "%s %s %s %s", 
-                  fatat, array_current_changes, array_head_changes, tatat) == 4){
+                  head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
+        if(!isATAT(head_atat, tail_atat)) continue;
 
         current_line_range.clear(); /* The current commit side, (-) */
         current_line_range.assign(array_current_changes); // "-"
@@ -526,14 +548,15 @@ void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_direct
     
     cmd_parent_head << "cd " << git_directory << " && git diff -U0 " 
                     << cur_commit_sha << "^" << " HEAD -- " << relative_file_path
-                    << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+                    << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
     fp_parent = popen(cmd_parent_head.str().c_str(), "r");
     if(NULL == fp_parent) return;
     memset(array_head_changes, 0, sizeof(array_head_changes));
 
-    while(fscanf(fp_parent, "%s %s %s %s", fatat, 
-                  array_parent_changes, array_head_changes, tatat) == 4){
-
+    while(fscanf(fp_parent, "%s %s %s %s", head_atat, 
+                  array_parent_changes, array_head_changes, tail_atat) == 4){
+      if(!isATAT(head_atat, tail_atat)) continue; 
+            
       head_line_result.clear(); /* The current commit side, (+) */
       head_line_result.assign(array_head_changes); // "+"
       head_line_result.erase(0,1); //remove "+"
@@ -587,25 +610,26 @@ void git_show_current_changes(std::string cur_commit_sha, std::string git_direct
     std::ostringstream cmd;
     
     char array_parent_changes[32] = {0}, array_current_changes[32] = {0}, 
-          fatat[12] = {0}, tatat[12] = {0};
+          head_atat[12] = {0}, tail_atat[12] = {0};
     std::string current_line_range;
     size_t comma_pos;
     int rc = 0;
     FILE *fp;
-    int line_num, num_start, num_count; 
+    int line_num, num_start, num_count;
 
     // git show: parent_commit(-) current_commit(+)
     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
     // this will and should rule out merged commit: 
     // result of "git show" for mergerd commit: "@@@ -4,1 -4,1 +4,2 @@@"
     cmd << "cd " << git_directory << " && git show --oneline -U0 " << cur_commit_sha << " -- " << relative_file_path
-          << " | grep -o -P \"^@@ -[0-9]+(,[0-9])? \\+[0-9]+(,[0-9])? @@\"";
+          << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
 
     fp = popen(cmd.str().c_str(), "r");
     if(NULL == fp) return;
     // get numbers in (+): current commit
     
-    while(fscanf(fp, "%s %s %s %s", fatat, array_parent_changes, array_current_changes, tatat) == 4){
+    while(fscanf(fp, "%s %s %s %s", head_atat, array_parent_changes, array_current_changes, tail_atat) == 4){
+      if(!isATAT(head_atat, tail_atat)) continue;
 
       current_line_range.clear(); /* The current commit side, (+) */
       current_line_range.assign(array_current_changes); // "+"
@@ -1058,9 +1082,9 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   // Choose part of BBs to insert the age/change signal
-  unsigned int changes_inst_thred = THRD_CHANGES_DEFAULT, 
-  age_inst_thred = THRD_DAYS_DEFAULT, 
-  rank_inst_thred = THRD_RANKS_DEFAULT;
+  unsigned int changes_inst_thred = THRESHOLD_CHANGES_DEFAULT,
+  age_inst_thred = THRESHOLD_DAYS_DEFAULT, 
+  rank_inst_thred = THRESHOLD_RANKS_DEFAULT;
 
   char *str_changes_inst_thred = getenv("AFLCHURN_THRD_CHANGE");
   if (str_changes_inst_thred){
@@ -1343,7 +1367,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
         /* Age only; Add age of lines */
         if ((bb_rank_age > 0) && //only when age is assigned
-                  (bb_age_best >= norm_age_thd || bb_rank_best > norm_rank_thd
+                  (bb_age_best >= norm_age_thd || bb_rank_best >= norm_rank_thd
                       || AFL_R(100) < bb_select_ratio)){
 
           inst_ages ++;
