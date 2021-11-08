@@ -365,9 +365,9 @@ enum{
 // default; Always instrument a BB if its age is less than days
 #define THRESHOLD_DAYS_DEFAULT     200
 #define THRESHOLD_RANKS_DEFAULT    200
-#define THRESHOLD_CHANGES_DEFAULT    10
-// Always instrument a BB if its #changes is larger than a percentage (%)
-#define THRESHOLD_PERCENT_CHANGES   10
+#define THRESHOLD_CHANGES_DEFAULT    5
+// Always instrument a BB if its churn is larger than a percentage (%)
+#define ALWAYS_INSERT_PERCENT   10
 
 /* Ratio (%) to select a BB to insert age/churn */
 #define CHURN_INSERT_RATIO    10
@@ -377,6 +377,8 @@ enum{
 #define DIST_CHANGES_FILE  "DISTRIBUTION_CHANGES.txt"
 #define DIST_RANKS_FILE  "DISTRIBUTION_RANK.txt"
 #define DIST_THRESHOLD_FILE  "DISTRIBUTION_THRESHOLD.txt"
+
+#define SHA_LENGTH 128
 
 
 #define WRONG_VALUE     -1

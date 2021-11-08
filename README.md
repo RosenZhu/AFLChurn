@@ -5,7 +5,26 @@ AFLChurn is a regression greybox fuzzer that focusses on code that is changed mo
 ## Project
 AFLChurn is developed based on [American Fuzzy Lop (AFL)](https://github.com/google/AFL) which was originally developed by Michal Zalewski <lcamtuf@google.com>. AFLChurn utilizes [git](https://git-scm.com/) to determine how frequently or how recently a BB was changed and an LLVM instrumentation pass to make the compiled program binary efficiently compute the commit-history-based fitness of an executed input.
 
-We tested the code on Linux 18.04, 64-bit system and used git version 2.17.1.
+We tested the code on Linux 18.04, 64-bit system and used Git version 2.33.1.
+
+## Requirements
+- Git version >= 2.23: For the option `git blame --ignore-rev`
+
+### upgrade git on linux: >= Git 2.23
+
+```bash
+sudo add-apt-repository ppa:git-core/ppa -y
+sudo apt-get update
+sudo apt-get install git -y
+git --version
+```
+
+### solution to solve problem of add-apt-repository
+It requires the python3.6, but the default is set to python3.8
+
+```bash
+sudo python3.6 /usr/bin/apt-add-repository ppa:git-core/ppa -y
+```
 
 ## Build AFLChurn
 To build AFLChurn, execute
@@ -86,11 +105,10 @@ If `-e` is set, it will not use the ant colony optimization for mutation.
 | `AFLCHURN_ENABLE_RANK` | `rrank` | enable rrank and disable rdays | / |
 | `AFLCHURN_DISABLE_CHURN` | `1` | disable #changes | / |
 | `AFLCHURN_INST_RATIO` | integer | select N% BBs to be inserted churn/age | / |
-| `AFLCHURN_SINCE_MONTHS` | integer | recording age/churn in recent N months | / |
 | `AFLCHURN_CHURN_SIG` | `change` | amplify function x | experimental |
 | `AFLCHURN_CHURN_SIG` |`change2`| amplify function x^2 | experimental |
 
-e.g., `export AFLCHURN_SINCE_MONTHS=6` indicates recording changes in the recent 6 months.
+e.g., `export AFLCHURN_DISABLE_AGE=1` indicates disabling using days.
 
 # TODO
 ## Experimental options

@@ -77,16 +77,6 @@ namespace {
     public:
 
       static char ID;
-      
-      // Type *VoidTy;
-      // IntegerType *Int1Ty;
-      // IntegerType *Int8Ty;
-      // IntegerType *Int32Ty;
-      // IntegerType *Int64Ty;
-      // Type *Int8PtrTy;
-      // Type *Int64PtrTy;
-      // GlobalVariable *AFLMapPtr;
-      // GlobalVariable *AFLPrevLoc;
 
       // unsigned NoSanMetaId;
       // MDTuple *NoneMetaNode;
@@ -113,17 +103,6 @@ bool startsWith(std::string big_str, std::string small_str){
   else return false;
 }
 
-// if both arrays are @@, return true.
-bool isATAT(char head_atat[], char tail_atat[]){
-  std::string str_head_atat, str_tail_atat;
-  str_head_atat.assign(head_atat);
-  str_tail_atat.assign(tail_atat);
-
-  if (str_head_atat.compare("@@")!=0 
-        || str_tail_atat.compare("@@")!=0) return false;
-
-  return true;
-}
 
 double inst_norm_age(int max_days, int days_since_last_change){
   double norm_days;
@@ -209,7 +188,6 @@ double inst_norm_change(unsigned int num_changes, unsigned short change_select){
 /* use popen() to execute git command */
 std::string execute_git_cmd (std::string directory, std::string str_cmd){
   FILE *fp;
-  int rc=0;
   std::string str_res = "";
   char ch_git_res[2048];
   std::ostringstream git_cmd;
@@ -229,41 +207,44 @@ std::string execute_git_cmd (std::string directory, std::string str_cmd){
     str_res = "";
   }
 
-  rc = pclose(fp);
-  if(-1 == rc){
-    printf("git command pclose() fails\n");
-  }
+  pclose(fp);
 
   return str_res;
 
 }
 
-// /* Get the number of changes that is used to choose between "always instrument"
-//         or "insturment randomly".
-// Note: #changes of a file is always larger than #changes of a line in the file,
-//     so THRESHOLD_PERCENT_CHANGES is set in a low value. */
-// int get_threshold_changes(std::string directory){
+/* Check if file exists in HEAD using command mode.
+return:
+    exist: 1; not exist: 0 */
+bool is_file_exist(std::string relative_file_path, std::string git_directory,
+                      std::string commit_sha){
 
-//   std::ostringstream changecmd;
-//   unsigned int largest_changes = 0;
-//   int change_threshold = 0;
-//   FILE *dfp;
-//   // The maximum number of changes to any file.
-//   changecmd << "cd " << directory
-//           << " && git log --name-only --pretty=\"format:\""
-//           << " | sed '/^\\s*$/d' | sort | uniq -c | sort -n"
-//           << " | tr -s ' ' | sed \"s/^ //g\" | cut -d\" \" -f1 | tail -n1";
-//   dfp = popen(changecmd.str().c_str(), "r");
-//   if(NULL == dfp) return WRONG_VALUE;
+  //string cmd("cd /home/usrname/repo && git cat-file -e HEAD:util/read.h 2>&1");
+  std::ostringstream cmd;
 
-//   if (fscanf(dfp, "%u", &largest_changes) != 1) return WRONG_VALUE;
+  char result_buf[1024];
+  bool isSuccess = false;
+  FILE *fp;
 
-//   change_threshold = (THRESHOLD_PERCENT_CHANGES * largest_changes) / 100;
+  if(access(git_directory.c_str(), F_OK) == -1) return false;
+  
+  cmd << "cd " << git_directory << " && git cat-file -e "
+      << commit_sha << ":" 
+      << relative_file_path << " 2>&1";
 
-//   pclose(dfp);
+	fp = popen(cmd.str().c_str(), "r");
+	if(NULL == fp) return false;
+	// when cmd fail, output "fatal: Path 'tdio.h' does not exist in 'HEAD'";
+  // when succeed, output nothing
+  if (fgets(result_buf, sizeof(result_buf), fp) != NULL) isSuccess = false;
+  else isSuccess = true;
+	
+  pclose(fp);
+  
+  return isSuccess;
 
-//   return change_threshold;
-// }
+}
+
 
 /* if return value is WRONG_VALUE, something wrong happens */
 int get_commit_time_days(std::string directory, std::string git_cmd){
@@ -311,484 +292,288 @@ int get_max_ranks(std::string git_directory){
 }
 
 
-// /* 
-//  git diff current_commit HEAD -- file_path. 
-//  Help get the related lines in HEAD commits, which are related to the lines from git show.
-//  */
-// void git_diff_current_head(std::string cur_commit_sha, std::string git_directory, 
-//             std::string relative_file_path, std::set<unsigned int> &changed_lines_from_show,
-//                 std::map <unsigned int, unsigned int> &lines2changes){
+/* if same, return true */
+bool isCommitsSame(std::string cmt1, std::string cmt2){
+  if (cmt1.length() <= cmt2.length())
+    return cmt1.compare(0, cmt1.length(), cmt2, 0, cmt1.length()) == 0;
 
-//     std::ostringstream cmd;
-//     char array_head_changes[32] = {0}, array_current_changes[32] = {0}, 
-//           head_atat[12] = {0}, tail_atat[12] = {0};
-//     std::string current_line_range, head_line_result;
-//     size_t cur_comma_pos, head_comma_pos;
-//     int rc = 0;
-//     FILE *fp;
-//     int cur_line_num, cur_num_start, cur_num_count, head_line_num, head_num_start, head_num_count;
-//     std::set<unsigned int> cur_changed_lines, head_changed_lines;
-//     bool is_head_changed = false;//, cur_head_has_diff = false;
-
-//     /* git diff -U0 cur_commit HEAD -- filename | grep ...
-//       get the changed line range between current commit and HEAD commit;
-//       help get the changed lines in HEAD commits;
-//       result: "@@ -8,0 +9,2 @@"
-//             (-): current commit; (+): HEAD commit
-//     */
-//     cmd << "cd " << git_directory << " && git diff -U0 " << cur_commit_sha << " HEAD -- " << relative_file_path
-//         << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
-
-//     fp = popen(cmd.str().c_str(), "r");
-//     if(NULL == fp) return;
-//     /* -: current_commit;
-//        +: HEAD */
-//     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
-//     while(fscanf(fp, "%s %s %s %s", head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
-
-//         // cur_head_has_diff = true;
-        
-//         current_line_range.clear(); /* The current commit side, (-) */
-//         current_line_range.assign(array_current_changes); // "-"
-//         current_line_range.erase(0,1); //remove "-"
-//         cur_comma_pos = current_line_range.find(",");
-//         /* If the changed lines in current commit can be found in changed_lines_from_show, 
-//             the related lines in HEAD commit should count for changes. */
-//         if (cur_comma_pos == std::string::npos){
-//             cur_line_num = std::stoi(current_line_range);
-//             if (changed_lines_from_show.count(cur_line_num)) is_head_changed = true;
-//         }else{
-//             cur_num_start = std::stoi(current_line_range.substr(0, cur_comma_pos));
-//             cur_num_count = std::stoi(current_line_range.substr(cur_comma_pos + 1, 
-//                                                                 current_line_range.length() - cur_comma_pos - 1));
-//             for(int i=0; i< cur_num_count; i++){
-//                 if (changed_lines_from_show.count(cur_num_start + i)){
-//                     is_head_changed = true;
-//                     break;
-//                 }
-//             }
-//         }
-
-//         /* Trace changes for head commit, increment lines2changes.
-//           Some lines are changed in current commit, so trace these lines back to HEAD commit,
-//           and increment the count of these lines in HEAD commit. 
-//           */
-//         if (is_head_changed){
-//             head_line_result.clear(); /* The head commit side, (+) */
-//             head_line_result.assign(array_head_changes); // "+"
-//             head_line_result.erase(0,1); //remove "+"
-//             head_comma_pos = head_line_result.find(",");
-
-//             if (head_comma_pos == std::string::npos){
-//                 head_line_num = std::stoi(head_line_result);
-//                 if (lines2changes.count(head_line_num)) lines2changes[head_line_num]++;
-//                 else lines2changes[head_line_num] = 1;
-//             }else{
-//                 head_num_start = std::stoi(head_line_result.substr(0, head_comma_pos));
-//                 head_num_count = std::stoi(head_line_result.substr(head_comma_pos + 1, 
-//                                                                   head_line_result.length() - head_comma_pos - 1));
-//                 for(int i=0; i< head_num_count; i++){ 
-//                     if (lines2changes.count(head_num_start + i)) lines2changes[head_num_start + i]++;
-//                     else lines2changes[head_num_start + i] = 1; 
-//                 }
-//             }
-
-//         }
-
-//         memset(array_current_changes, 0, sizeof(array_current_changes));
-//         memset(array_head_changes, 0, sizeof(array_head_changes));
-//     }
-
-//     /* if there's no diff in current commit and HEAD commit;
-//      there's no change of the file between two commits;
-//      so any change in current commit (compared to its parents) counts for the HEAD commit.
-//      CHECK: If an empty line is added, there's no diff result. 
-//      But the line number in current commit and HEAD commit may be different. */
-//     /*
-//     if (!cur_head_has_diff){
-//         for (auto mit = changed_lines_from_show.begin(); mit != changed_lines_from_show.end(); ++mit){
-//             if (lines2changes.count(*mit)) lines2changes[*mit]++;
-//             else lines2changes[*mit] = 1;
-//         }
-//     }*/
-
-//     rc = pclose(fp);
-//     if(-1 == rc){
-//         printf("git diff pclose() fails\n");
-//     }
-// }
+  return cmt2.compare(0, cmt2.length(), cmt1, 0, cmt2.length()) == 0;
+  
+}
 
 
-/* "diff cur HEAD" and "diff cur_parent HEAD"
- git diff current_commit HEAD -- file_path. 
- Help get the related lines in HEAD commits, which are related to the lines from git show.
- */
-/* parent: parent commit of current commit;
-   current: current commit;
-   HEAD: HEAD commit
-      parent            current             HEAD
-      ------  <-same->  ------  <-diff->   ------ Line1
-      ------  <-diff->  ------  <-diff->   ------ Line2
-      ------  <-diff->  ------  <-same->   ------ Line3
-      ------  <-same->  ------  <-same->   ------ Line4
-  *** Line2 and Line3 are required to be counted
-*/
-void git_diff_cur_parent_head(std::string cur_commit_sha, std::string git_directory, 
-            std::string relative_file_path, std::set<unsigned int> &changed_lines_from_show,
-                std::map <unsigned int, unsigned int> &lines2changes){
+// get unix time of a commit
+unsigned long cmt_unix_time(std::string git_directory, std::string cmt_sha){
+    FILE *unixfp;
+    unsigned long utime = 0;
+    std::ostringstream unix_cmd;
+    // result: 1557509398
+    unix_cmd << "cd " << git_directory 
+            << " && git show --no-patch --no-notes --pretty='%at' " 
+            << cmt_sha;
+    unixfp = popen(unix_cmd.str().c_str(), "r");
+    if (NULL== unixfp) return 0;
+    if (fscanf(unixfp, "%lu", &utime) != 1) utime = 0;
+    pclose(unixfp);
 
-    if (changed_lines_from_show.empty()) return;
-    /* Check if the parent commit SHA exists: "git cat-file -t $cur_commit_sha^": 
-    if succeeds, output "commit"; if fails, output "fatal: Not a valid object name..." */
-    std::ostringstream parent_cmd;
-    parent_cmd << "cd " << git_directory
-                << "&& git cat-file -t "
-                << cur_commit_sha << "^"
-                << " 2>&1";
-    std::string parent_commit = execute_git_cmd(git_directory, parent_cmd.str());
-    if (parent_commit.empty()) return;
-    
-    std::ostringstream cmd_cur_head, cmd_parent_head;
-    char array_head_changes[32] = {0}, array_current_changes[32] = {0}, array_parent_changes[32] = {0},
-          head_atat[12] = {0}, tail_atat[12] = {0};
-    std::string current_line_range, head_line_result;
-    size_t cur_comma_pos, head_comma_pos;
-    int rc = 0;
-    FILE *fp_cur, *fp_parent;
-    int cur_line_num, cur_num_start, cur_num_count, head_line_num, head_num_start, head_num_count;
-    std::set<unsigned int> cur_changed_lines, head_changed_lines;
-    bool is_head_changed = false;//, cur_head_has_diff = false;
-    std::set<unsigned int> all_changes_cur_head;
-
-    /* count "Line2"
-      git diff -U0 cur_commit HEAD -- filename | grep ...
-      get the changed line range between current commit and HEAD commit;
-      help get the changed lines in HEAD commits;
-      result: "@@ -8,0 +9,2 @@"
-            (-): current commit; (+): HEAD commit
-    */
-    cmd_cur_head << "cd " << git_directory << " && git diff -U0 " 
-                 << cur_commit_sha << " HEAD -- " << relative_file_path
-                 << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
-    fp_cur = popen(cmd_cur_head.str().c_str(), "r");
-
-    if(NULL == fp_cur) return;
-    /* -: current_commit;
-       +: HEAD */
-    // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
-    while(fscanf(fp_cur, "%s %s %s %s", 
-                  head_atat, array_current_changes, array_head_changes, tail_atat) == 4){
-        if(!isATAT(head_atat, tail_atat)) continue;
-
-        current_line_range.clear(); /* The current commit side, (-) */
-        current_line_range.assign(array_current_changes); // "-"
-        current_line_range.erase(0,1); //remove "-"
-        cur_comma_pos = current_line_range.find(",");
-        /* If the changed lines in current commit can be found in changed_lines_from_show, 
-            the related lines in HEAD commit should count for changes. */
-        if (cur_comma_pos == std::string::npos){
-            cur_line_num = std::stoi(current_line_range);
-            if (changed_lines_from_show.count(cur_line_num)) is_head_changed = true;
-        }else{
-            cur_num_start = std::stoi(current_line_range.substr(0, cur_comma_pos));
-            cur_num_count = std::stoi(current_line_range.substr(cur_comma_pos + 1, 
-                                      current_line_range.length() - cur_comma_pos - 1));
-            for(int i=0; i< cur_num_count; i++){
-                if (changed_lines_from_show.count(cur_num_start + i)){
-                    is_head_changed = true;
-                    break;
-                }
-            }
-        }
-
-        /* Trace changes for head commit, increment lines2changes.
-          Some lines are changed in current commit, so trace these lines back to HEAD commit,
-          and increment the count of these lines in HEAD commit.
-          Note: this may include "Line1" if "Line1" and "Line2" are neighbor
-          */
-        head_line_result.clear(); /* The head commit side, (+) */
-        head_line_result.assign(array_head_changes); // "+"
-        head_line_result.erase(0,1); //remove "+"
-        head_comma_pos = head_line_result.find(",");
-
-        if (head_comma_pos == std::string::npos){
-            head_line_num = std::stoi(head_line_result);
-            if (is_head_changed && (head_line_num >= 0)){
-              if (lines2changes.count(head_line_num)) 
-                  lines2changes[head_line_num]++;
-              else 
-                  lines2changes[head_line_num] = 1;
-            }
-            all_changes_cur_head.insert(head_line_num);
-        }else{
-            head_num_start = std::stoi(head_line_result.substr(0, head_comma_pos));
-            head_num_count = std::stoi(head_line_result.substr(head_comma_pos + 1, 
-                                        head_line_result.length() - head_comma_pos - 1));
-            for(int i=0; i< head_num_count; i++){ 
-              if (is_head_changed && (head_num_start >= 0)){
-                if (lines2changes.count(head_num_start + i)) 
-                    lines2changes[head_num_start + i]++;
-                else 
-                    lines2changes[head_num_start + i] = 1;
-              }
-              all_changes_cur_head.insert(head_num_start + i);
-            }
-        }
-
-        memset(array_current_changes, 0, sizeof(array_current_changes));
-        memset(array_head_changes, 0, sizeof(array_head_changes));
-    }
-
-    rc = pclose(fp_cur);
-    if(-1 == rc){
-      printf("git diff pclose() fails\n");
-    }
-
-    /* count "Line3" */
-    
-    cmd_parent_head << "cd " << git_directory << " && git diff -U0 " 
-                    << cur_commit_sha << "^" << " HEAD -- " << relative_file_path
-                    << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
-    fp_parent = popen(cmd_parent_head.str().c_str(), "r");
-    if(NULL == fp_parent) return;
-    memset(array_head_changes, 0, sizeof(array_head_changes));
-
-    while(fscanf(fp_parent, "%s %s %s %s", head_atat, 
-                  array_parent_changes, array_head_changes, tail_atat) == 4){
-      if(!isATAT(head_atat, tail_atat)) continue; 
-            
-      head_line_result.clear(); /* The current commit side, (+) */
-      head_line_result.assign(array_head_changes); // "+"
-      head_line_result.erase(0,1); //remove "+"
-      head_comma_pos = head_line_result.find(",");
-
-      if (head_comma_pos == std::string::npos){
-          head_line_num = std::stoi(head_line_result);
-          
-          /* If line number is NOT in all_changes_cur_head, it's a Line3 */
-          if (!all_changes_cur_head.count(head_line_num) && (head_line_num >= 0)) {
-            if (lines2changes.count(head_line_num)) 
-                lines2changes[head_line_num]++;
-            else 
-                lines2changes[head_line_num] = 1;
-          }
-          
-      }else{
-        head_num_start = std::stoi(head_line_result.substr(0, head_comma_pos));
-        head_num_count = std::stoi(head_line_result.substr(head_comma_pos + 1, 
-                              head_line_result.length() - head_comma_pos - 1));
-        for(int j = 0; j< head_num_count; j++){
-          /* If line number is NOT in all_changes_cur_head, it's a Line3 */
-          if (!all_changes_cur_head.count(head_num_start + j) && (head_num_start >= 0)) {
-            if (lines2changes.count(head_num_start + j)) 
-                lines2changes[head_num_start + j]++;
-            else 
-                lines2changes[head_num_start + j] = 1;
-          }
-            
-        }
-      }
-      memset(array_head_changes, 0, sizeof(array_head_changes));
-    }
-
-
-    rc = pclose(fp_parent);
-    if(-1 == rc){
-        printf("git diff pclose() fails\n");
-    }
+    return utime;
 
 }
 
-/* git show, get changed lines in current commit.
-    It'll show you the log message for the commit, and the diff of that particular commit.
-    Find the changed line numbers in file relative_file_path as it was changed in commit cur_commit_sha, 
+
+/* git diff parent HEAD */
+/* git diff, get changed lines in current commit.
+    Find the changed line numbers in file relative_file_path as it was changed in HEAD, 
     and add them to the list changed_lines_cur_commit     
  */
-void git_show_current_changes(std::string cur_commit_sha, std::string git_directory, 
-            std::string relative_file_path, std::set<unsigned int> &changed_lines_cur_commit){
+void git_diff_parent_head(std::string git_directory, std::string relative_file_path, 
+              std::string parent_commit, std::set<unsigned int> &changed_lines_cur_commit){
 
     std::ostringstream cmd;
     
-    char array_parent_changes[32] = {0}, array_current_changes[32] = {0}, 
-          head_atat[12] = {0}, tail_atat[12] = {0};
     std::string current_line_range;
-    size_t comma_pos;
-    int rc = 0;
     FILE *fp;
-    int line_num, num_start, num_count;
+    int num_start, num_count;
 
     // git show: parent_commit(-) current_commit(+)
     // result: "@@ -8,0 +9,2 @@" or "@@ -10 +11,0 @@" or "@@ -466,8 +475 @@" or "@@ -8 +9 @@"
-    // this will and should rule out merged commit: 
-    // result of "git show" for mergerd commit: "@@@ -4,1 -4,1 +4,2 @@@"
-    cmd << "cd " << git_directory << " && git show --oneline -U0 " << cur_commit_sha << " -- " << relative_file_path
-          << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@\"";
+    // output: "9,2" or "11,0" (the lines are deleted) or "8"
+    cmd << "cd " << git_directory 
+        << " && git diff --oneline -U0 " 
+        << parent_commit << " HEAD" 
+        << " -- " << relative_file_path
+        << " | grep -o -P \"^@@ -[0-9]+(,[0-9]+)? \\+\\K[0-9]+(,[0-9]+)?(?= @@)\"";
 
     fp = popen(cmd.str().c_str(), "r");
     if(NULL == fp) return;
     // get numbers in (+): current commit
-    
-    while(fscanf(fp, "%s %s %s %s", head_atat, array_parent_changes, array_current_changes, tail_atat) == 4){
-      if(!isATAT(head_atat, tail_atat)) continue;
-
-      current_line_range.clear(); /* The current commit side, (+) */
-      current_line_range.assign(array_current_changes); // "+"
-      current_line_range.erase(0,1); //remove "+"
-      comma_pos = current_line_range.find(",");
-
-      if (comma_pos == std::string::npos){
-          line_num = std::stoi(current_line_range);
-          if (line_num >= 0) changed_lines_cur_commit.insert(line_num);
-      }else{
-          num_start = std::stoi(current_line_range.substr(0, comma_pos));
-          num_count = std::stoi(current_line_range.substr(comma_pos+1, 
-                                                          current_line_range.length() - comma_pos - 1));
-          for(int i = 0; i< num_count; i++){
-              if (num_start >= 0) changed_lines_cur_commit.insert(num_start + i);
-          }
+    num_count = -1; // the result shows no count
+    while(fscanf(fp, "%d,%d", &num_start, &num_count) >= 1){
+      if (num_count == -1){ // result: 8
+        changed_lines_cur_commit.insert(num_start);
+      } else if (num_count > 0){ // result: 9,2
+        for (int i = 0; i < num_count; i++){
+          changed_lines_cur_commit.insert(num_start + i);
+        }
       }
-      memset(array_current_changes, 0, sizeof(array_current_changes));
+
+      num_count = -1;
     }
 
-    rc = pclose(fp);
-    if(-1 == rc){
-        printf("git show pclose() fails\n");
-    }
+   pclose(fp);
 }
 
-/* if same, return true */
-bool isCommitsSame(std::string cmt1, std::string cmt2){
-  
-  if (cmt1.length() <= cmt2.length()){
-    if (cmt1.compare(0, cmt1.length(), 
-          cmt2, 0, cmt1.length()) == 0){
-      return true;
-    }    
-  } else{
-    if (cmt2.compare(0, cmt2.length(), 
-          cmt1, 0, cmt2.length()) == 0){
-      return true;
-    }     
+/* Get changes in HEAD commit.
+  git diff HEAD to each parent commit.    
+ */
+void getHeadChanges(std::string git_directory, std::string relative_file_path, 
+                                std::set<unsigned int> &changed_lines_num){
+    std::string commit_sha;
+    char res_commit[SHA_LENGTH];
+    FILE *fp;
+    std::ostringstream pc_cmd;
+
+    //get parent commits of HEAD
+    // succeeds: output parent commit sha; fail: output "fatal: ..."
+    pc_cmd << "cd " << git_directory << " && "
+           << "git show -s --pretty=%P HEAD 2>&1";
+    fp = popen(pc_cmd.str().c_str(), "r");
+    if (NULL == fp) return;
+    while (fscanf(fp, "%s", res_commit) == 1){
+      commit_sha.assign(res_commit);
+      if (commit_sha.empty()) break;
+      if (startsWith(commit_sha, "fatal")) break;
+
+      git_diff_parent_head(git_directory, relative_file_path, 
+                                  commit_sha, changed_lines_num);
+    }
+
+    pclose(fp);
+
+}
+
+/* get 'git blame' in HEAD commit */
+  /* largest unix time => SHA of commit with the largest unix time => line pair 
+  //unix time, blame commit sha
+  map<unsigned long, string> utime2commit; 
+  // SHA of blame commit, (blame line number, head line number)
+  map<string, map<unsigned int, unsigned int>> commit2Blame2HeadLine; */
+void createHeadRecords(std::string relative_file_path, std::string git_directory,
+              std::map<unsigned long, std::string> &utime2commit, 
+              std::map<std::string, std::map<unsigned int, unsigned int>> &commit2Blame2HeadLine){
+    /* git blame -p $commit_SHA  -- relative_file_path
+       | grep -Po "^[0-9a-f]+ [0-9]+ [0-9]+" */
+  /* result: output: commit_hash old_line_num current_line_num
+                      7db7d5b73368 12 31 */
+
+  char blame_commit[SHA_LENGTH] = {0};
+  unsigned int head_line, blame_line;
+  unsigned long utime;
+  FILE *headfp;
+
+  std::string str_blame_commit;
+  std::map<std::string, unsigned long> cmt2time;
+
+  std::ostringstream headblame_cmd;
+  headblame_cmd << "cd " << git_directory
+            << " && git blame -p HEAD -- " << relative_file_path
+            << " | grep -Po \"^[0-9a-f]+ [0-9]+ [0-9]+\"";
+  headfp = popen(headblame_cmd.str().c_str(), "r");
+  if (NULL == headfp) return;
+
+  while (fscanf(headfp,"%s %u %u", blame_commit, &blame_line, &head_line) == 3){
+    str_blame_commit.assign(blame_commit);
+    if (str_blame_commit.empty()) continue;
+
+    if (!cmt2time.count(str_blame_commit)){
+      utime = cmt_unix_time(git_directory, str_blame_commit);
+      cmt2time[str_blame_commit] = utime;
+      utime2commit[utime] = str_blame_commit;
+    } else{
+      utime2commit[cmt2time[str_blame_commit]] = str_blame_commit;
+    }
+
+    commit2Blame2HeadLine[str_blame_commit][blame_line] = head_line;
+    
   }
 
-  return false;
+  pclose(headfp);
+      
+
 }
 
-/* use git command to get line changes */
-void calculate_line_change_git_cmd(std::string relative_file_path, std::string git_directory,
+/* Count lines in the latest commit. 
+    We travel backward time so that commits will not be "git blame"d repeatedly. 
+    utime_largest: the unix time of the most recent blamed commit */
+void countInLatestCommit(std::string relative_file_path, std::string git_directory,
+              std::map<unsigned long, std::string> &utime2commit,
+              unsigned long utime_largest, 
+              std::map<std::string, std::map<unsigned int, unsigned int>> &commit2Blame2HeadLine,
+              std::map<unsigned int, unsigned int> &headline2count){
+
+  char blamed_commit[SHA_LENGTH] = {0};
+  unsigned int cur_line, blame_line, head_line;
+  unsigned long utime;
+  FILE *headfp;
+
+  std::string str_blame_commit, cur_commit;
+  std::map<std::string, unsigned long> cmt2time;
+  std::ostringstream headblame_cmd;
+
+  cur_commit = utime2commit[utime_largest];
+
+  /* Get the lines touched in the cur_commit: previous blame line, head line;
+      In the current commit, the previous blamed line == the current line */
+  auto cur2headLines = commit2Blame2HeadLine[cur_commit];
+  auto curline_min = cur2headLines.begin()->first;
+  auto curline_max = cur2headLines.rbegin()->first;
+
+  // check if file exists in current commit. TODO: renamed file?
+  if (!is_file_exist(relative_file_path, git_directory, cur_commit)) return;
+
+  /* git blame -p -L 10,30 1485aacb161d72  -- meson.build 
+        | grep -Po "^[0-9a-f]+ [0-9]+ [0-9]+" */
+  /* output: blame_commit_hash old_line_num current_line_num
+                      7db7d5b73368 12 31 */
+  headblame_cmd << "cd " << git_directory
+            << " && git blame -p "    // -p: for the "grep -Po"
+            << " -L "<< curline_min << "," << curline_max << " "  // line range
+            << cur_commit  // the current commit
+            << " --ignore-rev " << cur_commit // Don't blame itself!!!
+            << " -- " << relative_file_path
+            << " | grep -Po \"^[0-9a-f]+ [0-9]+ [0-9]+\"";
+  headfp = popen(headblame_cmd.str().c_str(), "r");
+  if (NULL == headfp) return;
+  // head line => cur_line => blame line
+  while (fscanf(headfp, "%s %u %u", blamed_commit, &blame_line, &cur_line) == 3){
+
+    str_blame_commit.assign(blamed_commit);
+    if (str_blame_commit.empty()) continue;
+    // only deal with the lines touched in the current commit (i.e., previous blamed commit)
+    if (!cur2headLines.count(cur_line)) continue;
+
+    /* If the blamed commit equals to the current commit, 
+          the current commit is the one that creates the lines */
+    if (isCommitsSame(str_blame_commit, cur_commit)) continue;
+    
+    // don't repeatedly compute the unix time of the same commit
+    if (!cmt2time.count(str_blame_commit)){
+      utime = cmt_unix_time(git_directory, str_blame_commit);
+      cmt2time[str_blame_commit] = utime;
+      utime2commit[utime] = str_blame_commit;
+    } else{
+      utime2commit[cmt2time[str_blame_commit]] = str_blame_commit;
+    }
+
+    head_line = cur2headLines[cur_line];
+    commit2Blame2HeadLine[str_blame_commit][blame_line] = head_line;
+
+    /* Finally!! Count the #changes */
+    if (headline2count.count(head_line))
+        headline2count[head_line]++;
+    else
+        headline2count[head_line] = 1;
+
+  }
+
+  pclose(headfp);
+
+}
+
+/* get line #changes using git blame */
+void calculate_line_change_git_blame(std::string relative_file_path, std::string git_directory,
                     std::map<std::string, std::map<unsigned int, double>> &file2line2change_map,
                     unsigned short change_sig){
-    
-  std::ostringstream cmd;
-  std::string str_cur_commit_sha, str_head_commit_sha, str_init_commit_sha;
-  char ch_cur_commit_sha[128];
-  int rc = 0;
-  FILE *fp;
-  std::set<unsigned int> changed_lines_cur_commit;
-  std::map <unsigned int, unsigned int> lines2changes;
-  std::map <unsigned int, double> tmp_line2changes;
-  bool is_head = false;
-  
-  // get the commits that change the file of relative_file_path
-  // result: commit short SHAs
-  // TODO: If the file name changed, it cannot get the changed lines.
-  //  --since=10.years 
-  char* ch_month = getenv("AFLCHURN_SINCE_MONTHS");
-  if (ch_month){
-    std::string since_month(ch_month);
-    if (since_month.find_first_not_of("0123456789") == std::string::npos){ // all digits
-      
-      cmd << "cd " << git_directory 
-          << " && git log --since=" << ch_month << ".months"
-          << " --follow --oneline --format=\"%h\" -- " 
-          << relative_file_path << " | grep -Po \"^[0-9a-f]*$\"";
-          
-    } else {
-      ch_month = NULL; // if env variable is not digits, use all commits
+  unsigned long utime_largest;
+  std::string cur_commit;
+   /* largest unix time => SHA of commit with the largest unix time => line pair */
+  // unix time, blamed commit sha
+  std::map<unsigned long, std::string> utime2commit;
+  // SHA of blamed commit, (line number of blamed commit, head line number)
+  std::map<std::string, std::map<unsigned int, unsigned int>> commit2Blame2HeadLine;
+  // head line, count of #changes
+  std::map<unsigned int, unsigned int> headline2count;
+
+  /* get 'git blame' in HEAD commit */
+  createHeadRecords(relative_file_path, git_directory, 
+                          utime2commit, commit2Blame2HeadLine);
+
+  /* Get the #changes of lines.
+  Always analyze the commit with the largest unix time (the most recent date) */
+  while(!utime2commit.empty()){
+    // get the commit with the largest unix time
+    auto largest_utime_it = utime2commit.rbegin();
+    utime_largest = largest_utime_it->first;
+    cur_commit = largest_utime_it->second;
+
+    countInLatestCommit(relative_file_path, git_directory, utime2commit, utime_largest, 
+                              commit2Blame2HeadLine, headline2count);
+
+    /* remove the record of the analyzed commit */
+    commit2Blame2HeadLine.erase(cur_commit);
+    utime2commit.erase(utime_largest);
+  }
+
+  // Changes in HEAD
+  std::set<unsigned int> changed_lines_num;
+  getHeadChanges(git_directory, relative_file_path, changed_lines_num);
+  if (!changed_lines_num.empty()){
+    for (auto headcn : changed_lines_num){
+      if (headline2count.count(headcn)) headline2count[headcn]++;
+      else headline2count[headcn] = 1;
     }
   }
-  
-  if (!ch_month){
-
-    cmd << "cd " << git_directory 
-        << " && git log" 
-        <<" --follow --oneline --format=\"%h\" -- " 
-        << relative_file_path
-        << " | grep -Po \"^[0-9a-f]*$\""; 
-  }
-  
-  fp = popen(cmd.str().c_str(), "r");
-  if(NULL == fp) return;
-
-  /* Get the HEAD commit SHA */
-  str_head_commit_sha = execute_git_cmd(git_directory, "git rev-parse HEAD");
-  /* Get the initial commit SHA */
-  str_init_commit_sha = execute_git_cmd(git_directory, "git rev-list --max-parents=0 HEAD");
-
-  /* get lines2changes: git log -> git show -> git diff
-    "git log -- filename": get commits SHAs changing the file
-    "git show $commit_sha -- filename": get changed lines in current commit
-    "git diff $commit_sha HEAD -- filename": get the related lines in HEAD commit
-    */
-  while(fscanf(fp, "%s", ch_cur_commit_sha) == 1){
-      str_cur_commit_sha.clear();
-      str_cur_commit_sha.assign(ch_cur_commit_sha);
-      
-      /* If it's a HEAD commit, skip it; Will get the changes in HEAD later */
-      if (!str_head_commit_sha.empty()){
-        if (isCommitsSame(str_head_commit_sha, str_cur_commit_sha)){
-          is_head = true;
-          continue;
-        }
-      }
-
-      /* If it's an initial commit, skip it */
-      if (!str_init_commit_sha.empty()){
-        if (isCommitsSame(str_init_commit_sha, str_cur_commit_sha)){
-          continue;
-        }
-      }
-
-      // get changed_lines_cur_commit: the change lines in current commit
-      changed_lines_cur_commit.clear();
-      git_show_current_changes(str_cur_commit_sha, git_directory, 
-                                  relative_file_path, changed_lines_cur_commit);
-      // get lines2changes: related change lines in HEAD commit
-      // git_diff_current_head(str_cur_commit_sha, git_directory, relative_file_path, 
-      //                         changed_lines_cur_commit, lines2changes);
-      git_diff_cur_parent_head(str_cur_commit_sha, git_directory, relative_file_path, 
-                              changed_lines_cur_commit, lines2changes);
-  }
-
-  /* Get changes in HEAD */
-  if (is_head){
-    changed_lines_cur_commit.clear();
-    git_show_current_changes("HEAD", git_directory, 
-                                    relative_file_path, changed_lines_cur_commit);
-    if (!changed_lines_cur_commit.empty()){
-      for (auto lchead : changed_lines_cur_commit){
-        if (lines2changes.count(lchead)) lines2changes[lchead] ++;
-        else lines2changes[lchead] = 1;
-      }
-    }
-  }
-
 
   /* Get changes */
-  if (!lines2changes.empty()){
-    // logchanges
-    for (auto l2c : lines2changes){
-      tmp_line2changes[l2c.first] = inst_norm_change(l2c.second, change_sig);
+  std::map <unsigned int, double> tmp_line2changes;
+  if (!headline2count.empty()){
+    for (auto h2c: headline2count){
+      tmp_line2changes[h2c.first] = inst_norm_change(h2c.second, change_sig);
     }
 
     file2line2change_map[relative_file_path] = tmp_line2changes;
   }
-  
-  
-  rc = pclose(fp);
-  if(-1 == rc){
-      printf("git log pclose() fails\n");
-  }
+
 
 }
 
@@ -798,7 +583,7 @@ void calculate_line_change_git_cmd(std::string relative_file_path, std::string g
   head_commit_days: unix time of head commit, in days;
   init_commit_days: unix time of initial 
 */
-bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_directory,
+bool calculate_line_age(std::string relative_file_path, std::string git_directory,
                     std::map<std::string, std::map<unsigned int, double>> &file2line2age_map,
                     int head_commit_days, int init_commit_days){
 
@@ -812,7 +597,6 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   */
 
   std::ostringstream cmd;
-  int rc = 0;
   FILE *fp;
   unsigned long unix_time;
   unsigned int line;
@@ -838,10 +622,7 @@ bool calculate_line_age_git_cmd(std::string relative_file_path, std::string git_
   if (!line_age_days.empty())
       file2line2age_map[relative_file_path] = line_age_days;
 
-  rc = pclose(fp);
-  if(-1 == rc){
-    printf("git blame pclose() fails\n");
-  }
+  pclose(fp);
 
   return true;
 
@@ -902,42 +683,6 @@ bool cal_line_age_rank(std::string relative_file_path, std::string git_directory
   if (!line_rank.empty()) file2line2rank_map[relative_file_path] = line_rank;
   return true;
   
-}
-
-
-
-/* Check if file exists in HEAD using command mode.
-return:
-    exist: 1; not exist: 0 */
-bool is_file_exist(std::string relative_file_path, std::string git_directory){
-
-  //string cmd("cd /home/usrname/repo && git cat-file -e HEAD:util/read.h 2>&1");
-  std::ostringstream cmd;
-
-  char result_buf[1024];
-  int rc = 0;
-  bool isSuccess = false;
-  FILE *fp;
-
-  if(access(git_directory.c_str(), F_OK) == -1) return false;
-  
-  cmd << "cd " << git_directory << " && git cat-file -e HEAD:" 
-      << relative_file_path << " 2>&1";
-
-	fp = popen(cmd.str().c_str(), "r");
-	if(NULL == fp) return false;
-	// when cmd fail, output "fatal: Path 'tdio.h' does not exist in 'HEAD'";
-  // when succeed, output nothing
-  if (fgets(result_buf, sizeof(result_buf), fp) != NULL) isSuccess = false;
-  else isSuccess = true;
-	
-  rc = pclose(fp);
-  if(-1 == rc){
-    printf("git cat-file pclose() fails\n");
-  }
-  
-  return isSuccess;
-
 }
 
 
@@ -1172,7 +917,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                 func_abs_path = func_abs_path.substr(0, func_abs_path.find_last_of("\\/")); //remove filename in string
                 //git rev-parse --show-toplevel: show the root folder of a repository
                 // result: /home/usr/repo_name
-                std::string cmd_repo ("git rev-parse --show-toplevel 2>&1");
+                std::string cmd_repo ("git rev-parse --show-toplevel");
                 
                 git_path = execute_git_cmd(func_abs_path, cmd_repo);
                 if (git_path.empty()) git_no_found = 1;
@@ -1181,7 +926,7 @@ bool AFLCoverage::runOnModule(Module &M) {
                 /* Check shallow git repository */
                 // git rev-list HEAD --count: count the number of commits
                 if (!git_no_found){
-                  std::string cmd_count ("git rev-list HEAD --count 2>&1");
+                  std::string cmd_count ("git rev-list HEAD --count");
                   std::string commit_cnt = execute_git_cmd(git_path, cmd_count);
                   
                   if (commit_cnt.compare("1") == 0){ //only one commit
@@ -1191,7 +936,6 @@ bool AFLCoverage::runOnModule(Module &M) {
                     break;
                   }
                   // #change threshold
-                  // changes_inst_thred = get_threshold_changes(git_path);
                   //get commit time
                   std::string head_cmd("git show -s --format=%ct HEAD");
                   head_commit_days = get_commit_time_days(git_path, head_cmd);
@@ -1278,22 +1022,25 @@ bool AFLCoverage::runOnModule(Module &M) {
                   processed_files.insert(clean_relative_path);
 
                   /* Check if file exists in HEAD using command mode */
-                  if (!is_file_exist(clean_relative_path, git_path)){
+                  if (!is_file_exist(clean_relative_path, git_path, "HEAD")){
                     unexist_files.insert(clean_relative_path);
                     break;
                   }
                   
                   /* the ages for lines */
-                  if (use_cmd_age) 
-                    calculate_line_age_git_cmd(clean_relative_path, git_path, map_age_scores,
+                  if (use_cmd_age) {
+                    calculate_line_age(clean_relative_path, git_path, map_age_scores,
                                                 head_commit_days, init_commit_days);
-                  if (use_cmd_age_rank)
+                  }
+                  if (use_cmd_age_rank){
                     cal_line_age_rank(clean_relative_path, git_path, map_rank_age, 
                                             commit_rank, head_num_parents);
+                  }
                   /* the number of changes for lines */
-                  if (use_cmd_change)
-                    calculate_line_change_git_cmd(clean_relative_path, git_path, 
+                  if (use_cmd_change){
+                    calculate_line_change_git_blame(clean_relative_path, git_path, 
                                                       map_bursts_scores, change_sig);
+                  }
                   
                 }
                 
@@ -1367,7 +1114,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
         /* Age only; Add age of lines */
         if ((bb_rank_age > 0) && //only when age is assigned
-                  (bb_age_best >= norm_age_thd || bb_rank_best >= norm_rank_thd
+                  (bb_age_best > norm_age_thd || bb_rank_best > norm_rank_thd
                       || AFL_R(100) < bb_select_ratio)){
 
           inst_ages ++;
@@ -1383,7 +1130,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
         if ((bb_burst_best > 0) && //only when change is assigned
-                (bb_burst_best >= norm_change_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best > norm_change_thd || AFL_R(100) < bb_select_ratio)){
           inst_changes++;
           module_total_changes += bb_burst_best;
 
@@ -1398,8 +1145,8 @@ bool AFLCoverage::runOnModule(Module &M) {
         /* Note: based on normolization, 
                 we skip BBs when either bb_rank_age=0 or bb_burst_best=0 */
         if ((bb_rank_age > 0 && bb_burst_best > 0) &&
-                (bb_burst_best >= norm_change_thd || bb_age_best >= norm_age_thd
-                   || bb_rank_best >= norm_rank_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best > norm_change_thd || bb_age_best > norm_age_thd
+                   || bb_rank_best > norm_rank_thd || AFL_R(100) < bb_select_ratio)){
             // change
             inst_changes++;
             module_total_changes += bb_burst_best;
@@ -1465,7 +1212,7 @@ bool AFLCoverage::runOnModule(Module &M) {
              inst_blocks, getenv("AFL_HARDEN") ? "hardened" :
              ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN")) ?
               "ASAN/MSAN" : "non-hardened"), inst_ratio);
-    OKF("AFLChurn instrumentation ratio %u%%", bb_select_ratio);
+    OKF("AFLChurn instrumentation ratio: %u%% randomly + top churn", bb_select_ratio);
     if (inst_ages) module_ave_ages = module_total_ages / inst_ages;
     if (inst_changes) module_ave_chanegs = module_total_changes / inst_changes;
     if (inst_fitness) module_ave_fitness = module_total_fitness / inst_fitness;
