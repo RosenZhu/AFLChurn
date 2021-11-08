@@ -372,11 +372,8 @@ void git_diff_parent_head(std::string git_directory, std::string relative_file_p
    pclose(fp);
 }
 
-/* Get changes in HEAD commit */
-/* git show, get changed lines in current commit.
-    It'll show you the log message for the commit, and the diff of that particular commit.
-    Find the changed line numbers in file relative_file_path as it was changed in commit HEAD, 
-    and add them to the list changed_lines_num     
+/* Get changes in HEAD commit.
+  git diff HEAD to each parent commit.    
  */
 void getHeadChanges(std::string git_directory, std::string relative_file_path, 
                                 std::set<unsigned int> &changed_lines_num){
@@ -1126,7 +1123,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       if ((use_cmd_age || use_cmd_age_rank) && !use_cmd_change){
         /* Age only; Add age of lines */
         if ((bb_rank_age > 0) && //only when age is assigned
-                  (bb_age_best >= norm_age_thd || bb_rank_best >= norm_rank_thd
+                  (bb_age_best > norm_age_thd || bb_rank_best > norm_rank_thd
                       || AFL_R(100) < bb_select_ratio)){
 
           inst_ages ++;
@@ -1142,7 +1139,7 @@ bool AFLCoverage::runOnModule(Module &M) {
       } else if (use_cmd_change && !use_cmd_age_rank && !use_cmd_age){
         /* Change Only; Add changes of lines */
         if ((bb_burst_best > 0) && //only when change is assigned
-                (bb_burst_best >= norm_change_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best > norm_change_thd || AFL_R(100) < bb_select_ratio)){
           inst_changes++;
           module_total_changes += bb_burst_best;
 
@@ -1157,8 +1154,8 @@ bool AFLCoverage::runOnModule(Module &M) {
         /* Note: based on normolization, 
                 we skip BBs when either bb_rank_age=0 or bb_burst_best=0 */
         if ((bb_rank_age > 0 && bb_burst_best > 0) &&
-                (bb_burst_best >= norm_change_thd || bb_age_best >= norm_age_thd
-                   || bb_rank_best >= norm_rank_thd || AFL_R(100) < bb_select_ratio)){
+                (bb_burst_best > norm_change_thd || bb_age_best > norm_age_thd
+                   || bb_rank_best > norm_rank_thd || AFL_R(100) < bb_select_ratio)){
             // change
             inst_changes++;
             module_total_changes += bb_burst_best;

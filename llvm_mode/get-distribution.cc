@@ -378,11 +378,7 @@ void git_diff_parent_head(std::string git_directory, std::string relative_file_p
 }
 
 /* Get changes in HEAD commit */
-/* git show, get changed lines in current commit.
-    It'll show you the log message for the commit, and the diff of that particular commit.
-    Find the changed line numbers in file relative_file_path as it was changed in commit HEAD, 
-    and add them to the list changed_lines_num     
- */
+
 void getHeadChanges(std::string git_directory, std::string relative_file_path, 
                                 std::set<unsigned int> &changed_lines_num){
     std::string commit_sha;
@@ -390,7 +386,7 @@ void getHeadChanges(std::string git_directory, std::string relative_file_path,
     FILE *fp;
     std::ostringstream pc_cmd;
 
-    //get parent commits of HEAD
+    // get parent commits of HEAD
     // succeeds: output parent commit sha; fail: output "fatal: ..."
     pc_cmd << "cd " << git_directory << " && "
            << "git show -s --pretty=%P HEAD 2>&1";
