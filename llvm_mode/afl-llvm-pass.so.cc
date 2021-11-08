@@ -294,20 +294,11 @@ int get_max_ranks(std::string git_directory){
 
 /* if same, return true */
 bool isCommitsSame(std::string cmt1, std::string cmt2){
-  
-  if (cmt1.length() <= cmt2.length()){
-    if (cmt1.compare(0, cmt1.length(), 
-          cmt2, 0, cmt1.length()) == 0){
-      return true;
-    }    
-  } else{
-    if (cmt2.compare(0, cmt2.length(), 
-          cmt1, 0, cmt2.length()) == 0){
-      return true;
-    }     
-  }
+  if (cmt1.length() <= cmt2.length())
+    return cmt1.compare(0, cmt1.length(), cmt2, 0, cmt1.length()) == 0;
 
-  return false;
+  return cmt2.compare(0, cmt2.length(), cmt1, 0, cmt2.length()) == 0;
+  
 }
 
 

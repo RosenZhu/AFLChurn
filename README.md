@@ -5,12 +5,12 @@ AFLChurn is a regression greybox fuzzer that focusses on code that is changed mo
 ## Project
 AFLChurn is developed based on [American Fuzzy Lop (AFL)](https://github.com/google/AFL) which was originally developed by Michal Zalewski <lcamtuf@google.com>. AFLChurn utilizes [git](https://git-scm.com/) to determine how frequently or how recently a BB was changed and an LLVM instrumentation pass to make the compiled program binary efficiently compute the commit-history-based fitness of an executed input.
 
-We tested the code on Linux 18.04, 64-bit system and used git version 2.17.1.
+We tested the code on Linux 18.04, 64-bit system and used Git version 2.33.1.
 
 ## Requirements
-- git version >= 2.23: For the option `git blame --ignore-rev`
+- Git version >= 2.23: For the option `git blame --ignore-rev`
 
-### upgrade git on linux: >= git 2.23
+### upgrade git on linux: >= Git 2.23
 
 ```bash
 sudo add-apt-repository ppa:git-core/ppa -y
