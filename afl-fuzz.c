@@ -124,7 +124,7 @@ static u8 *seed_prob_norm_buf,                  /* normed probability of seeds *
           *byte_out_scratch_buf,                /* For ACO; kicked out of analysis queue during creating alias table */
           *byte_in_scratch_buf;                  /* For ACO */
 
-u8 alias_seed_selection = 0;        /* Use alias method to select next seed based on burst */
+u8 alias_seed_selection = 1;        /* Use alias method to select next seed based on burst */
 u8 fuzz_all_first = 0;              /* All seeds are fuzzed at least once before using alias method to select next seed */
 
 double total_log_bitmap_size = 0;       /* Total value of log(bitmap_size) */
@@ -8683,7 +8683,7 @@ int main(int argc, char** argv) {
         break;
 
       case 'Z':
-        alias_seed_selection = 1;
+        alias_seed_selection = 0;
         break;
 
       case 'D':

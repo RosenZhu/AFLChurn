@@ -1249,8 +1249,6 @@ static void registerAFLPass(const PassManagerBuilder &,
 
 }
 
-// TODO: which one? early or last? - rosen
-
 // static RegisterStandardPasses RegisterAFLPass(
 //     PassManagerBuilder::EP_ModuleOptimizerEarly, registerAFLPass);
 

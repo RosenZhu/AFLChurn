@@ -5,14 +5,18 @@ AFLChurn is a regression greybox fuzzer that focusses on code that is changed mo
 ## Project
 AFLChurn is developed based on [American Fuzzy Lop (AFL)](https://github.com/google/AFL) which was originally developed by Michal Zalewski <lcamtuf@google.com>. AFLChurn utilizes [git](https://git-scm.com/) to determine how frequently or how recently a BB was changed and an LLVM instrumentation pass to make the compiled program binary efficiently compute the commit-history-based fitness of an executed input.
 
-We tested the code on Linux 18.04, 64-bit system and used Git version 2.33.1.
 
 ## Requirements
-- Git version >= 2.23: For the option `git blame --ignore-rev`
 
-### upgrade git on linux: >= Git 2.23
+We tested the code on Linux 18.04, 64-bit system and used Git version 2.33.1.
+
+- Git version >= 2.23: For the option `git blame --ignore-rev`
+- g++: Install `g++` if "error 'set' file not found" is met
+
+### upgrade Git on linux:
 
 ```bash
+sudo apt-get install -y software-properties-common
 sudo add-apt-repository ppa:git-core/ppa -y
 sudo apt-get update
 sudo apt-get install git -y
@@ -20,7 +24,7 @@ git --version
 ```
 
 ### solution to solve problem of add-apt-repository
-It requires the python3.6, but the default is set to python3.8
+It requires the default python in linux, but the default is changed manually to python3.8
 
 ```bash
 sudo python3.6 /usr/bin/apt-add-repository ppa:git-core/ppa -y
@@ -114,6 +118,8 @@ e.g., `export AFLCHURN_DISABLE_AGE=1` indicates disabling using days.
 ## Experimental options
 ### alias method for seed selection
 | `-Z` | no args | alias method for seed selection | experimental |
+
+If `-Z` is set, use seed alias = false.
 
 ### fuzz all seeds first before using alias method for seed selection
 `-D`: if set, fuzz all seeds first = true
